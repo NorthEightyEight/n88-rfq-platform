@@ -1,0 +1,14 @@
+{
+    "name": "n88-rfq-platform/pdf-extraction",
+    "description": "PDF extraction dependencies for N88 RFQ Platform",
+    "type": "library",
+    "require": {
+        "php": ">=7.4",
+        "smalot/pdfparser": "^2.12"
+    },
+    "autoload": {
+        "psr-4": {
+            "N88RFQ\\": "includes/"
+        }
+    }
+}
