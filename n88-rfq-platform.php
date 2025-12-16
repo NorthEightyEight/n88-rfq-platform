@@ -68,6 +68,8 @@ $includes = array(
     'includes/class-n88-rfq-pricing.php',
     'includes/class-n88-rfq-timeline.php',
     'includes/class-n88-rfq-timeline-events.php',
+    'includes/class-n88-events.php',
+    'includes/class-n88-authorization.php',
     'includes/lib/fpdf.php',
 );
 
