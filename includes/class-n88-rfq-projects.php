@@ -986,6 +986,24 @@ class N88_RFQ_Projects {
         $existing_id  = isset( $_POST['project_id'] ) ? (int) $_POST['project_id'] : 0;
         $form_type    = sanitize_text_field( $_POST['form_type'] ?? 'rfq' );
         
+        // Rate limiting: 5 submissions per 15 minutes
+        $rate_limit = N88_RFQ_Helpers::check_rate_limit( 'submit', 5, 900, $user_id ); // 900 seconds = 15 minutes
+        if ( $rate_limit ) {
+            $retry_minutes = ceil( $rate_limit['retry_after'] / 60 );
+            $error_msg = sprintf( 
+                'Rate limit exceeded. You have submitted too many projects. Please try again in %d minute(s).',
+                $retry_minutes
+            );
+            
+            $form_page = ( 'sourcing' === $form_type ) ? '/sourcing-form/' : '/rfq-form/';
+            $redirect_url = $existing_id 
+                ? add_query_arg( array( 'project_id' => $existing_id, 'n88_rate_limit' => 1, 'n88_error_msg' => urlencode( $error_msg ) ), home_url( $form_page ) )
+                : add_query_arg( array( 'n88_rate_limit' => 1, 'n88_error_msg' => urlencode( $error_msg ) ), home_url( $form_page ) );
+            
+            wp_redirect( $redirect_url );
+            exit;
+        }
+        
         error_log( 'N88 RFQ: User ID: ' . $user_id . ', Submit Type: ' . $submit_type . ', Existing ID: ' . $existing_id );
 
         // If editing existing project, verify ownership

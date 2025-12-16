@@ -258,5 +258,100 @@ class N88_RFQ_Helpers {
             'image/x-dwg'
         );
     }
+
+    /**
+     * Get client IP address and return hashed version.
+     * 
+     * @return string Hashed IP address.
+     */
+    public static function get_hashed_ip() {
+        $ip = '';
+        
+        if ( ! empty( $_SERVER['HTTP_CLIENT_IP'] ) ) {
+            $ip = $_SERVER['HTTP_CLIENT_IP'];
+        } elseif ( ! empty( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) {
+            $ip = $_SERVER['HTTP_X_FORWARDED_FOR'];
+        } elseif ( ! empty( $_SERVER['REMOTE_ADDR'] ) ) {
+            $ip = $_SERVER['REMOTE_ADDR'];
+        }
+        
+        // Hash the IP for privacy and use in keys
+        return hash( 'sha256', $ip . ( defined( 'AUTH_SALT' ) ? AUTH_SALT : 'n88-rfq-salt' ) );
+    }
+
+    /**
+     * Check rate limit for an action.
+     * 
+     * @param string $action Action identifier (e.g., 'submit', 'upload').
+     * @param int    $limit Maximum number of requests allowed.
+     * @param int    $window Time window in seconds.
+     * @param int    $user_id User ID (0 if not logged in).
+     * @return array|false Returns false if within limit, or array with 'throttled' => true, 'retry_after' => seconds if throttled.
+     */
+    public static function check_rate_limit( $action, $limit, $window, $user_id = 0 ) {
+        $ip_hash = self::get_hashed_ip();
+        
+        // Build transient key: user_id + ip_hash if logged in, ip_hash only if not
+        if ( $user_id > 0 ) {
+            $transient_key = 'n88_rfq_' . $action . '_' . $user_id . '_' . $ip_hash;
+        } else {
+            $transient_key = 'n88_rfq_' . $action . '_' . $ip_hash;
+        }
+        
+        // Get current count and timestamp
+        $rate_data = get_transient( $transient_key );
+        
+        if ( false === $rate_data ) {
+            // First request in window - initialize
+            $rate_data = array(
+                'count' => 1,
+                'start_time' => time(),
+            );
+            set_transient( $transient_key, $rate_data, $window );
+            return false; // Not throttled
+        }
+        
+        $current_time = time();
+        $elapsed = $current_time - $rate_data['start_time'];
+        
+        // If window has expired, reset
+        if ( $elapsed >= $window ) {
+            $rate_data = array(
+                'count' => 1,
+                'start_time' => $current_time,
+            );
+            set_transient( $transient_key, $rate_data, $window );
+            return false; // Not throttled
+        }
+        
+        // Check if limit exceeded
+        if ( $rate_data['count'] >= $limit ) {
+            $retry_after = $window - $elapsed;
+            
+            // Log rate limit trigger
+            error_log( sprintf(
+                'N88 RFQ: Rate limit triggered - Action: %s, User ID: %d, IP Hash: %s, Count: %d/%d, Retry After: %d seconds',
+                $action,
+                $user_id,
+                $ip_hash,
+                $rate_data['count'],
+                $limit,
+                $retry_after
+            ) );
+            
+            return array(
+                'throttled' => true,
+                'retry_after' => $retry_after,
+                'limit' => $limit,
+                'window' => $window,
+            );
+        }
+        
+        // Increment count
+        $rate_data['count']++;
+        set_transient( $transient_key, $rate_data, $window );
+        
+        return false; // Not throttled
+    }
 }
 

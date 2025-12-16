@@ -239,6 +239,12 @@ class N88_RFQ_Frontend {
             $message = isset( $_GET['n88_error_msg'] ) ? sanitize_text_field( wp_unslash( $_GET['n88_error_msg'] ) ) : 'An error occurred while saving.';
         }
 
+        // Check for rate limit message
+        if ( isset( $_GET['n88_rate_limit'] ) ) {
+            $message_type = 'error';
+            $message = isset( $_GET['n88_error_msg'] ) ? sanitize_text_field( wp_unslash( $_GET['n88_error_msg'] ) ) : 'Rate limit exceeded. Please try again later.';
+        }
+
         ob_start();
         if ( $message ) {
             $this->render_message( $message, $message_type );
@@ -286,6 +292,12 @@ class N88_RFQ_Frontend {
         if ( isset( $_GET['n88_error'] ) ) {
             $message_type = 'error';
             $message = isset( $_GET['n88_error_msg'] ) ? sanitize_text_field( wp_unslash( $_GET['n88_error_msg'] ) ) : 'An error occurred while saving.';
+        }
+
+        // Check for rate limit message
+        if ( isset( $_GET['n88_rate_limit'] ) ) {
+            $message_type = 'error';
+            $message = isset( $_GET['n88_error_msg'] ) ? sanitize_text_field( wp_unslash( $_GET['n88_error_msg'] ) ) : 'Rate limit exceeded. Please try again later.';
         }
 
         ob_start();
@@ -6171,6 +6183,24 @@ class N88_RFQ_Frontend {
 
         if ( ! is_user_logged_in() ) {
             wp_send_json_error( 'Not logged in' );
+        }
+
+        $user_id = get_current_user_id();
+        
+        // Rate limiting: 10 uploads per hour
+        $rate_limit = N88_RFQ_Helpers::check_rate_limit( 'upload', 10, 3600, $user_id ); // 3600 seconds = 1 hour
+        if ( $rate_limit ) {
+            $retry_minutes = ceil( $rate_limit['retry_after'] / 60 );
+            status_header( 429 ); // Too Many Requests
+            wp_send_json_error( array(
+                'message' => sprintf( 
+                    'Rate limit exceeded. You have uploaded too many files. Please try again in %d minute(s).',
+                    $retry_minutes
+                ),
+                'retry_after' => $rate_limit['retry_after'],
+                'limit' => $rate_limit['limit'],
+                'window' => $rate_limit['window'],
+            ) );
         }
 
         $project_id = isset( $_POST['project_id'] ) ? intval( $_POST['project_id'] ) : 0;
