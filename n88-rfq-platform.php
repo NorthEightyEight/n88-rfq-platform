@@ -70,7 +70,9 @@ $includes = array(
     'includes/class-n88-rfq-timeline-events.php',
     'includes/class-n88-events.php',
     'includes/class-n88-authorization.php',
-    'includes/class-n88-items-boards.php',
+    'includes/class-n88-items.php',
+    'includes/class-n88-boards.php',
+    'includes/class-n88-board-layout.php',
     'includes/lib/fpdf.php',
 );
 
@@ -95,8 +97,10 @@ function n88_rfq_bootstrap() {
     new N88_RFQ_Projects();
     new N88_RFQ_Admin();
     new N88_RFQ_Frontend();
-    // Milestone 1.1: Items and Boards endpoints
-    new N88_Items_Boards();
+    // Milestone 1.1: Items, Boards, and Layout endpoints
+    new N88_Items();
+    new N88_Boards();
+    new N88_Board_Layout();
 }
     add_action( 'plugins_loaded', 'n88_rfq_bootstrap', 5 );
 }

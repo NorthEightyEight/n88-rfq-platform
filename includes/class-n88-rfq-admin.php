@@ -286,6 +286,16 @@ class N88_RFQ_Admin {
             'n88-rfq-content',
             array( $this, 'render_content_manager' )
         );
+
+        // Milestone 1.1: Test page for Items & Boards (temporary for testing)
+        add_submenu_page(
+            'n88-rfq-dashboard',
+            __( 'Items & Boards (Test)', 'n88-rfq' ),
+            __( 'Items & Boards', 'n88-rfq' ),
+            'manage_options',
+            'n88-rfq-items-boards-test',
+            array( $this, 'render_items_boards_test' )
+        );
     }
 
     public function render_main_dashboard() {
@@ -1938,6 +1948,389 @@ class N88_RFQ_Admin {
                 font-weight: 600;
             }
         </style>
+        <?php
+    }
+
+    /**
+     * Render Items & Boards Test Page (Milestone 1.1)
+     * 
+     * Temporary test interface for Milestone 1.1 endpoints.
+     * This is NOT a production UI - only for testing the foundation.
+     */
+    public function render_items_boards_test() {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_die( __( 'You do not have permission to view this page.', 'n88-rfq' ) );
+        }
+
+        // Get nonce for AJAX requests
+        $nonce = wp_create_nonce( 'n88-rfq-nonce' );
+        ?>
+        <div class="wrap n88-items-boards-test">
+            <h1>Milestone 1.1 - Items & Boards Test Page</h1>
+            <p><strong>Note:</strong> This is a temporary test interface. Milestone 1.1 is foundation-only (no production UI).</p>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px;">
+                <!-- Create Item Form -->
+                <div style="border: 1px solid #ccc; padding: 20px; border-radius: 4px;">
+                    <h2>Create Item</h2>
+                    <form id="n88-create-item-form">
+                        <table class="form-table">
+                            <tr>
+                                <th><label for="item-title">Title *</label></th>
+                                <td><input type="text" id="item-title" name="title" required style="width: 100%;" /></td>
+                            </tr>
+                            <tr>
+                                <th><label for="item-description">Description</label></th>
+                                <td><textarea id="item-description" name="description" rows="3" style="width: 100%;"></textarea></td>
+                            </tr>
+                            <tr>
+                                <th><label for="item-type">Item Type</label></th>
+                                <td>
+                                    <select id="item-type" name="item_type" style="width: 100%;">
+                                        <option value="furniture">Furniture</option>
+                                        <option value="lighting">Lighting</option>
+                                        <option value="accessory">Accessory</option>
+                                        <option value="art">Art</option>
+                                        <option value="other">Other</option>
+                                    </select>
+                                </td>
+                            </tr>
+                            <tr>
+                                <th><label for="item-status">Status</label></th>
+                                <td>
+                                    <select id="item-status" name="status" style="width: 100%;">
+                                        <option value="draft">Draft</option>
+                                        <option value="active">Active</option>
+                                        <option value="archived">Archived</option>
+                                    </select>
+                                </td>
+                            </tr>
+                        </table>
+                        <p class="submit">
+                            <button type="submit" class="button button-primary">Create Item</button>
+                        </p>
+                        <div id="create-item-result" style="margin-top: 10px;"></div>
+                    </form>
+                </div>
+
+                <!-- Create Board Form -->
+                <div style="border: 1px solid #ccc; padding: 20px; border-radius: 4px;">
+                    <h2>Create Board</h2>
+                    <form id="n88-create-board-form">
+                        <table class="form-table">
+                            <tr>
+                                <th><label for="board-name">Name *</label></th>
+                                <td><input type="text" id="board-name" name="name" required style="width: 100%;" /></td>
+                            </tr>
+                            <tr>
+                                <th><label for="board-description">Description</label></th>
+                                <td><textarea id="board-description" name="description" rows="3" style="width: 100%;"></textarea></td>
+                            </tr>
+                            <tr>
+                                <th><label for="board-view-mode">View Mode</label></th>
+                                <td>
+                                    <select id="board-view-mode" name="view_mode" style="width: 100%;">
+                                        <option value="grid">Grid</option>
+                                        <option value="list">List</option>
+                                        <option value="3d">3D</option>
+                                    </select>
+                                </td>
+                            </tr>
+                        </table>
+                        <p class="submit">
+                            <button type="submit" class="button button-primary">Create Board</button>
+                        </p>
+                        <div id="create-board-result" style="margin-top: 10px;"></div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Update Item Form -->
+            <div style="border: 1px solid #ccc; padding: 20px; border-radius: 4px; margin-top: 20px;">
+                <h2>Update Item</h2>
+                <form id="n88-update-item-form">
+                    <table class="form-table">
+                        <tr>
+                            <th><label for="update-item-id">Item ID *</label></th>
+                            <td><input type="number" id="update-item-id" name="item_id" required style="width: 100%;" /></td>
+                        </tr>
+                        <tr>
+                            <th><label for="update-item-title">Title</label></th>
+                            <td><input type="text" id="update-item-title" name="title" style="width: 100%;" /></td>
+                        </tr>
+                        <tr>
+                            <th><label for="update-item-description">Description</label></th>
+                            <td><textarea id="update-item-description" name="description" rows="3" style="width: 100%;"></textarea></td>
+                        </tr>
+                        <tr>
+                            <th><label for="update-item-status">Status</label></th>
+                            <td>
+                                <select id="update-item-status" name="status" style="width: 100%;">
+                                    <option value="">-- No Change --</option>
+                                    <option value="draft">Draft</option>
+                                    <option value="active">Active</option>
+                                    <option value="archived">Archived</option>
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th><label for="update-item-type">Item Type</label></th>
+                            <td>
+                                <select id="update-item-type" name="item_type" style="width: 100%;">
+                                    <option value="">-- No Change --</option>
+                                    <option value="furniture">Furniture</option>
+                                    <option value="lighting">Lighting</option>
+                                    <option value="accessory">Accessory</option>
+                                    <option value="art">Art</option>
+                                    <option value="other">Other</option>
+                                </select>
+                            </td>
+                        </tr>
+                    </table>
+                    <p class="submit">
+                        <button type="submit" class="button button-primary">Update Item</button>
+                    </p>
+                    <div id="update-item-result" style="margin-top: 10px;"></div>
+                </form>
+            </div>
+
+            <!-- Add Item to Board Form -->
+            <div style="border: 1px solid #ccc; padding: 20px; border-radius: 4px; margin-top: 20px;">
+                <h2>Add Item to Board</h2>
+                <form id="n88-add-item-to-board-form">
+                    <table class="form-table">
+                        <tr>
+                            <th><label for="add-board-id">Board ID *</label></th>
+                            <td><input type="number" id="add-board-id" name="board_id" required style="width: 100%;" /></td>
+                        </tr>
+                        <tr>
+                            <th><label for="add-item-id">Item ID *</label></th>
+                            <td><input type="number" id="add-item-id" name="item_id" required style="width: 100%;" /></td>
+                        </tr>
+                    </table>
+                    <p class="submit">
+                        <button type="submit" class="button button-primary">Add Item to Board</button>
+                    </p>
+                    <div id="add-item-to-board-result" style="margin-top: 10px;"></div>
+                </form>
+            </div>
+
+            <!-- Update Board Layout Form -->
+            <div style="border: 1px solid #ccc; padding: 20px; border-radius: 4px; margin-top: 20px;">
+                <h2>Update Board Layout</h2>
+                <form id="n88-update-board-layout-form">
+                    <table class="form-table">
+                        <tr>
+                            <th><label for="layout-board-id">Board ID *</label></th>
+                            <td><input type="number" id="layout-board-id" name="board_id" required style="width: 100%;" /></td>
+                        </tr>
+                        <tr>
+                            <th><label for="layout-item-id">Item ID *</label></th>
+                            <td><input type="number" id="layout-item-id" name="item_id" required style="width: 100%;" /></td>
+                        </tr>
+                        <tr>
+                            <th><label for="layout-position-x">Position X</label></th>
+                            <td><input type="number" step="0.01" id="layout-position-x" name="position_x" value="0" style="width: 100%;" /></td>
+                        </tr>
+                        <tr>
+                            <th><label for="layout-position-y">Position Y</label></th>
+                            <td><input type="number" step="0.01" id="layout-position-y" name="position_y" value="0" style="width: 100%;" /></td>
+                        </tr>
+                        <tr>
+                            <th><label for="layout-position-z">Position Z</label></th>
+                            <td><input type="number" id="layout-position-z" name="position_z" value="0" style="width: 100%;" /></td>
+                        </tr>
+                        <tr>
+                            <th><label for="layout-size-width">Size Width</label></th>
+                            <td><input type="number" step="0.01" id="layout-size-width" name="size_width" style="width: 100%;" /></td>
+                        </tr>
+                        <tr>
+                            <th><label for="layout-size-height">Size Height</label></th>
+                            <td><input type="number" step="0.01" id="layout-size-height" name="size_height" style="width: 100%;" /></td>
+                        </tr>
+                        <tr>
+                            <th><label for="layout-view-mode">View Mode</label></th>
+                            <td>
+                                <select id="layout-view-mode" name="view_mode" style="width: 100%;">
+                                    <option value="grid">Grid</option>
+                                    <option value="list">List</option>
+                                    <option value="3d">3D</option>
+                                </select>
+                            </td>
+                        </tr>
+                    </table>
+                    <p class="submit">
+                        <button type="submit" class="button button-primary">Update Layout</button>
+                    </p>
+                    <div id="update-board-layout-result" style="margin-top: 10px;"></div>
+                </form>
+            </div>
+
+            <script type="text/javascript">
+            jQuery(document).ready(function($) {
+                var nonce = '<?php echo esc_js( $nonce ); ?>';
+                var ajaxurl = '<?php echo esc_js( admin_url( 'admin-ajax.php' ) ); ?>';
+
+                // Create Item
+                $('#n88-create-item-form').on('submit', function(e) {
+                    e.preventDefault();
+                    var $result = $('#create-item-result');
+                    $result.html('<p>Creating...</p>');
+
+                    $.ajax({
+                        url: ajaxurl,
+                        type: 'POST',
+                        data: {
+                            action: 'n88_create_item',
+                            nonce: nonce,
+                            title: $('#item-title').val(),
+                            description: $('#item-description').val(),
+                            item_type: $('#item-type').val(),
+                            status: $('#item-status').val()
+                        },
+                        success: function(response) {
+                            if (response.success) {
+                                $result.html('<p style="color: green;">✓ Item created! ID: ' + response.data.item_id + '</p>');
+                            } else {
+                                $result.html('<p style="color: red;">✗ Error: ' + (response.data.message || 'Unknown error') + '</p>');
+                            }
+                        },
+                        error: function() {
+                            $result.html('<p style="color: red;">✗ AJAX request failed</p>');
+                        }
+                    });
+                });
+
+                // Create Board
+                $('#n88-create-board-form').on('submit', function(e) {
+                    e.preventDefault();
+                    var $result = $('#create-board-result');
+                    $result.html('<p>Creating...</p>');
+
+                    $.ajax({
+                        url: ajaxurl,
+                        type: 'POST',
+                        data: {
+                            action: 'n88_create_board',
+                            nonce: nonce,
+                            name: $('#board-name').val(),
+                            description: $('#board-description').val(),
+                            view_mode: $('#board-view-mode').val()
+                        },
+                        success: function(response) {
+                            if (response.success) {
+                                $result.html('<p style="color: green;">✓ Board created! ID: ' + response.data.board_id + '</p>');
+                            } else {
+                                $result.html('<p style="color: red;">✗ Error: ' + (response.data.message || 'Unknown error') + '</p>');
+                            }
+                        },
+                        error: function() {
+                            $result.html('<p style="color: red;">✗ AJAX request failed</p>');
+                        }
+                    });
+                });
+
+                // Update Item
+                $('#n88-update-item-form').on('submit', function(e) {
+                    e.preventDefault();
+                    var $result = $('#update-item-result');
+                    $result.html('<p>Updating...</p>');
+
+                    var data = {
+                        action: 'n88_update_item',
+                        nonce: nonce,
+                        item_id: $('#update-item-id').val()
+                    };
+
+                    if ($('#update-item-title').val()) data.title = $('#update-item-title').val();
+                    if ($('#update-item-description').val()) data.description = $('#update-item-description').val();
+                    if ($('#update-item-status').val()) data.status = $('#update-item-status').val();
+                    if ($('#update-item-type').val()) data.item_type = $('#update-item-type').val();
+
+                    $.ajax({
+                        url: ajaxurl,
+                        type: 'POST',
+                        data: data,
+                        success: function(response) {
+                            if (response.success) {
+                                $result.html('<p style="color: green;">✓ Item updated! Changed fields: ' + (response.data.changed_fields || []).join(', ') + '</p>');
+                            } else {
+                                $result.html('<p style="color: red;">✗ Error: ' + (response.data.message || 'Unknown error') + '</p>');
+                            }
+                        },
+                        error: function() {
+                            $result.html('<p style="color: red;">✗ AJAX request failed</p>');
+                        }
+                    });
+                });
+
+                // Add Item to Board
+                $('#n88-add-item-to-board-form').on('submit', function(e) {
+                    e.preventDefault();
+                    var $result = $('#add-item-to-board-result');
+                    $result.html('<p>Adding...</p>');
+
+                    $.ajax({
+                        url: ajaxurl,
+                        type: 'POST',
+                        data: {
+                            action: 'n88_add_item_to_board',
+                            nonce: nonce,
+                            board_id: $('#add-board-id').val(),
+                            item_id: $('#add-item-id').val()
+                        },
+                        success: function(response) {
+                            if (response.success) {
+                                $result.html('<p style="color: green;">✓ Item added to board!</p>');
+                            } else {
+                                $result.html('<p style="color: red;">✗ Error: ' + (response.data.message || 'Unknown error') + '</p>');
+                            }
+                        },
+                        error: function() {
+                            $result.html('<p style="color: red;">✗ AJAX request failed</p>');
+                        }
+                    });
+                });
+
+                // Update Board Layout
+                $('#n88-update-board-layout-form').on('submit', function(e) {
+                    e.preventDefault();
+                    var $result = $('#update-board-layout-result');
+                    $result.html('<p>Updating...</p>');
+
+                    var data = {
+                        action: 'n88_update_board_layout',
+                        nonce: nonce,
+                        board_id: $('#layout-board-id').val(),
+                        item_id: $('#layout-item-id').val(),
+                        position_x: $('#layout-position-x').val(),
+                        position_y: $('#layout-position-y').val(),
+                        position_z: $('#layout-position-z').val(),
+                        view_mode: $('#layout-view-mode').val()
+                    };
+
+                    if ($('#layout-size-width').val()) data.size_width = $('#layout-size-width').val();
+                    if ($('#layout-size-height').val()) data.size_height = $('#layout-size-height').val();
+
+                    $.ajax({
+                        url: ajaxurl,
+                        type: 'POST',
+                        data: data,
+                        success: function(response) {
+                            if (response.success) {
+                                $result.html('<p style="color: green;">✓ Layout updated!</p>');
+                            } else {
+                                $result.html('<p style="color: red;">✗ Error: ' + (response.data.message || 'Unknown error') + '</p>');
+                            }
+                        },
+                        error: function() {
+                            $result.html('<p style="color: red;">✗ AJAX request failed</p>');
+                        }
+                    });
+                });
+            });
+            </script>
+        </div>
         <?php
     }
 }
