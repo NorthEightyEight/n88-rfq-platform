@@ -487,27 +487,39 @@ class N88_Items {
             }
             
             // Update normalized dimensions and original values in database
-            // Only update fields where raw values were provided (to preserve NULL when not provided)
+            // Only update fields where raw values were provided (omit NULL to preserve existing NULL)
             if ( $raw_width !== null ) {
-                // User provided width - update normalized and original (even if NULL after validation)
-                $update_data['dimension_width_cm'] = $new_dimension_width_cm;
-                $update_data['dimension_width_original'] = $new_dimension_width_original;
-                $update_format[] = ( $new_dimension_width_cm !== null ) ? '%f' : null;
-                $update_format[] = ( $new_dimension_width_original !== null ) ? '%f' : null;
+                // User provided width - only add to update if value is not NULL
+                if ( $new_dimension_width_cm !== null ) {
+                    $update_data['dimension_width_cm'] = $new_dimension_width_cm;
+                    $update_format[] = '%f';
+                }
+                if ( $new_dimension_width_original !== null ) {
+                    $update_data['dimension_width_original'] = $new_dimension_width_original;
+                    $update_format[] = '%f';
+                }
             }
             if ( $raw_depth !== null ) {
-                // User provided depth - update normalized and original
-                $update_data['dimension_depth_cm'] = $new_dimension_depth_cm;
-                $update_data['dimension_depth_original'] = $new_dimension_depth_original;
-                $update_format[] = ( $new_dimension_depth_cm !== null ) ? '%f' : null;
-                $update_format[] = ( $new_dimension_depth_original !== null ) ? '%f' : null;
+                // User provided depth - only add to update if value is not NULL
+                if ( $new_dimension_depth_cm !== null ) {
+                    $update_data['dimension_depth_cm'] = $new_dimension_depth_cm;
+                    $update_format[] = '%f';
+                }
+                if ( $new_dimension_depth_original !== null ) {
+                    $update_data['dimension_depth_original'] = $new_dimension_depth_original;
+                    $update_format[] = '%f';
+                }
             }
             if ( $raw_height !== null ) {
-                // User provided height - update normalized and original
-                $update_data['dimension_height_cm'] = $new_dimension_height_cm;
-                $update_data['dimension_height_original'] = $new_dimension_height_original;
-                $update_format[] = ( $new_dimension_height_cm !== null ) ? '%f' : null;
-                $update_format[] = ( $new_dimension_height_original !== null ) ? '%f' : null;
+                // User provided height - only add to update if value is not NULL
+                if ( $new_dimension_height_cm !== null ) {
+                    $update_data['dimension_height_cm'] = $new_dimension_height_cm;
+                    $update_format[] = '%f';
+                }
+                if ( $new_dimension_height_original !== null ) {
+                    $update_data['dimension_height_original'] = $new_dimension_height_original;
+                    $update_format[] = '%f';
+                }
             }
             // Store unit if any dimension was provided (always set, defaults to 'cm' if missing)
             if ( $raw_width !== null || $raw_depth !== null || $raw_height !== null ) {
@@ -530,16 +542,18 @@ class N88_Items {
 
         // 2. Calculate CBM (recalculate if dimensions changed)
         $new_cbm = null;
+        $cbm_needs_null_clear = false; // Track if CBM needs explicit NULL clear
         if ( $dimension_changed ) {
             $new_cbm = N88_Intelligence::calculate_cbm( $new_dimension_width_cm, $new_dimension_depth_cm, $new_dimension_height_cm );
             if ( $new_cbm !== $old_cbm ) {
-                // Store CBM (only if not NULL to preserve NULL in DB, not 0)
+                // Store CBM if not NULL (omit from update_data if NULL to preserve existing)
+                // If CBM becomes NULL (incomplete dimensions), we'll clear it explicitly
                 if ( $new_cbm !== null ) {
                     $update_data['cbm'] = $new_cbm;
                     $update_format[] = '%f';
                 } else {
-                    $update_data['cbm'] = null;
-                    $update_format[] = null; // NULL format for NULL value
+                    // CBM is NULL - mark for explicit NULL clear
+                    $cbm_needs_null_clear = true;
                 }
                 $changed_fields[] = array(
                     'field' => 'cbm',
@@ -609,6 +623,14 @@ class N88_Items {
 
         if ( $updated === false ) {
             wp_send_json_error( array( 'message' => 'Failed to update item.' ), 500 );
+        }
+
+        // Explicitly clear CBM to NULL if dimensions became incomplete
+        if ( $cbm_needs_null_clear ) {
+            $wpdb->query( $wpdb->prepare(
+                "UPDATE {$table} SET cbm = NULL WHERE id = %d",
+                $item_id
+            ) );
         }
 
         // Log edit history for each changed field
