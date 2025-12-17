@@ -296,6 +296,16 @@ class N88_RFQ_Admin {
             'n88-rfq-items-boards-test',
             array( $this, 'render_items_boards_test' )
         );
+
+        // Phase 1.2.3: Material Bank
+        add_submenu_page(
+            'n88-rfq-dashboard',
+            __( 'Material Bank', 'n88-rfq' ),
+            __( 'Material Bank', 'n88-rfq' ),
+            'manage_options',
+            'n88-rfq-materials',
+            array( $this, 'render_material_bank' )
+        );
     }
 
     public function render_main_dashboard() {
@@ -1725,6 +1735,136 @@ class N88_RFQ_Admin {
 
     public function render_content_manager() {
         echo '<div class="wrap"><h1>Content Manager</h1><p>TODO: Implement video upload and library per design.</p></div>';
+    }
+
+    /**
+     * Render Material Bank admin page
+     * 
+     * Phase 1.2.3: Material Bank Core
+     */
+    public function render_material_bank() {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_die( __( 'You do not have permission to view this page.', 'n88-rfq' ) );
+        }
+
+        global $wpdb;
+        $materials_table = $wpdb->prefix . 'n88_materials';
+        
+        // Get all non-deleted materials
+        $materials = $wpdb->get_results(
+            "SELECT * FROM {$materials_table} WHERE deleted_at IS NULL ORDER BY created_at DESC"
+        );
+
+        ?>
+        <div class="wrap">
+            <h1>Material Bank</h1>
+            <p>Manage materials for the RFQ platform. Materials can be attached to items by designers.</p>
+            
+            <h2>Materials List</h2>
+            <table class="wp-list-table widefat fixed striped">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Name</th>
+                        <th>Category</th>
+                        <th>Material Code</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if ( empty( $materials ) ) : ?>
+                        <tr>
+                            <td colspan="7">No materials found.</td>
+                        </tr>
+                    <?php else : ?>
+                        <?php foreach ( $materials as $material ) : ?>
+                            <tr>
+                                <td><?php echo esc_html( $material->id ); ?></td>
+                                <td><strong><?php echo esc_html( $material->name ); ?></strong></td>
+                                <td><?php echo esc_html( $material->category ?: '—' ); ?></td>
+                                <td><?php echo esc_html( $material->material_code ?: '—' ); ?></td>
+                                <td>
+                                    <?php if ( $material->is_active == 1 ) : ?>
+                                        <span style="color: green;">Active</span>
+                                    <?php else : ?>
+                                        <span style="color: red;">Inactive</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td><?php echo esc_html( $material->created_at ); ?></td>
+                                <td>
+                                    <a href="#" class="button button-small edit-material" data-id="<?php echo esc_attr( $material->id ); ?>">Edit</a>
+                                    <?php if ( $material->is_active == 1 ) : ?>
+                                        <a href="#" class="button button-small deactivate-material" data-id="<?php echo esc_attr( $material->id ); ?>">Deactivate</a>
+                                    <?php else : ?>
+                                        <a href="#" class="button button-small activate-material" data-id="<?php echo esc_attr( $material->id ); ?>">Activate</a>
+                                    <?php endif; ?>
+                                    <a href="#" class="button button-small delete-material" data-id="<?php echo esc_attr( $material->id ); ?>">Delete</a>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+            
+            <h2>Add New Material</h2>
+            <form id="create-material-form">
+                <table class="form-table">
+                    <tr>
+                        <th><label for="material_name">Name *</label></th>
+                        <td><input type="text" id="material_name" name="name" class="regular-text" required /></td>
+                    </tr>
+                    <tr>
+                        <th><label for="material_description">Description</label></th>
+                        <td><textarea id="material_description" name="description" class="large-text" rows="3"></textarea></td>
+                    </tr>
+                    <tr>
+                        <th><label for="material_category">Category</label></th>
+                        <td><input type="text" id="material_category" name="category" class="regular-text" /></td>
+                    </tr>
+                    <tr>
+                        <th><label for="material_code">Material Code</label></th>
+                        <td><input type="text" id="material_code" name="material_code" class="regular-text" /></td>
+                    </tr>
+                    <tr>
+                        <th><label for="material_notes">Notes</label></th>
+                        <td><textarea id="material_notes" name="notes" class="large-text" rows="3"></textarea></td>
+                    </tr>
+                </table>
+                <?php wp_nonce_field( 'n88-rfq-nonce', 'nonce' ); ?>
+                <p class="submit">
+                    <button type="submit" class="button button-primary">Create Material</button>
+                </p>
+            </form>
+        </div>
+        
+        <script>
+        jQuery(document).ready(function($) {
+            // Create material
+            $('#create-material-form').on('submit', function(e) {
+                e.preventDefault();
+                var formData = $(this).serialize();
+                $.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: formData + '&action=n88_create_material',
+                    success: function(response) {
+                        if (response.success) {
+                            alert('Material created successfully!');
+                            location.reload();
+                        } else {
+                            alert('Error: ' + (response.data.message || 'Unknown error'));
+                        }
+                    }
+                });
+            });
+            
+            // Edit, activate, deactivate, delete handlers would go here
+            // (Simplified for Phase 1.2.3 - full UI can be added later)
+        });
+        </script>
+        <?php
     }
 
     public function render_comments_hub() {

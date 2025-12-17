@@ -74,6 +74,8 @@ $includes = array(
     'includes/class-n88-items.php',
     'includes/class-n88-boards.php',
     'includes/class-n88-board-layout.php',
+    'includes/class-n88-materials.php',
+    'includes/class-n88-item-materials.php',
     'includes/lib/fpdf.php',
 );
 
@@ -102,6 +104,9 @@ function n88_rfq_bootstrap() {
     new N88_Items();
     new N88_Boards();
     new N88_Board_Layout();
+    // Phase 1.2.3: Material Bank
+    new N88_Materials();
+    new N88_Item_Materials();
 }
     add_action( 'plugins_loaded', 'n88_rfq_bootstrap', 5 );
 }

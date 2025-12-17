@@ -33,6 +33,14 @@ class N88_Events {
         'item_dimension_changed',
         'item_cbm_recalculated',
         'item_unit_normalized',
+        // Phase 1.2.3: Material Bank events
+        'material_created',
+        'material_updated',
+        'material_activated',
+        'material_deactivated',
+        'material_attached_to_item',
+        'material_detached_from_item',
+        'materials_in_mind_uploaded',
     );
 
     /**
