@@ -457,19 +457,13 @@ class N88_RFQ_Installer {
         $item_materials_table = $wpdb->prefix . 'n88_item_materials';
         $material_requests_table = $wpdb->prefix . 'n88_material_requests';
 
-        // n88_materials
+        // n88_materials (Phase 1.2: read-only reference bank only)
         $sql_materials = "CREATE TABLE {$materials_table} (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             name VARCHAR(255) NOT NULL,
             description TEXT NULL,
             category VARCHAR(100) NULL,
             material_code VARCHAR(100) NULL,
-            supplier_name VARCHAR(255) NULL,
-            supplier_contact TEXT NULL,
-            unit_cost DECIMAL(10,2) NULL,
-            currency VARCHAR(3) NULL DEFAULT 'USD',
-            lead_time_days INT UNSIGNED NULL,
-            minimum_order_quantity INT UNSIGNED NULL,
             notes TEXT NULL,
             is_active TINYINT(1) NOT NULL DEFAULT 1,
             created_by_user_id BIGINT UNSIGNED NOT NULL,
@@ -492,6 +486,7 @@ class N88_RFQ_Installer {
             quantity DECIMAL(10,3) NOT NULL DEFAULT 1.000,
             unit VARCHAR(50) NOT NULL DEFAULT 'unit',
             notes TEXT NULL,
+            is_active TINYINT(1) NOT NULL DEFAULT 1,
             attached_by_user_id BIGINT UNSIGNED NOT NULL,
             attached_at DATETIME NOT NULL,
             detached_at DATETIME NULL,
@@ -499,6 +494,7 @@ class N88_RFQ_Installer {
             UNIQUE KEY item_material_active (item_id, material_id, detached_at),
             KEY item_id (item_id),
             KEY material_id (material_id),
+            KEY is_active (is_active),
             KEY attached_at (attached_at)
         ) {$charset_collate};";
 
@@ -535,9 +531,9 @@ class N88_RFQ_Installer {
         // Check if columns exist before adding
         $items_columns = $wpdb->get_col( "DESCRIBE {$items_table_safe}" );
 
-        // Add sourcing_type column (after status)
+        // Add sourcing_type column (after status) - NULL default, allowed: 'furniture' | 'global_sourcing'
         if ( ! in_array( 'sourcing_type', $items_columns, true ) ) {
-            $wpdb->query( "ALTER TABLE {$items_table_safe} ADD COLUMN sourcing_type VARCHAR(50) NOT NULL DEFAULT 'local' AFTER status" );
+            $wpdb->query( "ALTER TABLE {$items_table_safe} ADD COLUMN sourcing_type VARCHAR(50) NULL AFTER status" );
             $wpdb->query( "ALTER TABLE {$items_table_safe} ADD KEY sourcing_type (sourcing_type)" );
         }
 
