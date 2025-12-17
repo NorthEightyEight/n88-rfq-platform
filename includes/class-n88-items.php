@@ -254,6 +254,7 @@ class N88_Items {
         $dimension_changed = false;
         $unit_changed = false;
         $sourcing_type_changed = false;
+        $dimension_null_clear_fields = array(); // Fields to explicitly clear to NULL
 
         // Process each allowed field
         foreach ( self::$allowed_update_fields as $field_name => $field_config ) {
@@ -358,35 +359,80 @@ class N88_Items {
         // 1. Handle dimension normalization with validation
         
         // Check if any dimensions are being updated
+        // Semantics:
+        // - Field not in POST → do not change it
+        // - Field present but empty ("") → explicit CLEAR (set to NULL)
+        // - Field present with value → normalize and store
         $has_dimension_input = isset( $_POST['dimension_width'] ) || isset( $_POST['dimension_depth'] ) || isset( $_POST['dimension_height'] );
         
+        // Track which dimensions are being explicitly cleared
+        $width_is_clear = false;
+        $depth_is_clear = false;
+        $height_is_clear = false;
+        
         if ( $has_dimension_input ) {
-            // Get raw dimension values
-            $raw_width = isset( $_POST['dimension_width'] ) ? floatval( $_POST['dimension_width'] ) : null;
-            $raw_depth = isset( $_POST['dimension_depth'] ) ? floatval( $_POST['dimension_depth'] ) : null;
-            $raw_height = isset( $_POST['dimension_height'] ) ? floatval( $_POST['dimension_height'] ) : null;
+            // Get raw dimension values with explicit clear detection
+            if ( isset( $_POST['dimension_width'] ) ) {
+                $raw_width_str = wp_unslash( $_POST['dimension_width'] );
+                if ( $raw_width_str === '' ) {
+                    // Explicit clear: empty string means set to NULL
+                    $raw_width = null;
+                    $width_is_clear = true;
+                } else {
+                    $raw_width = floatval( $raw_width_str );
+                }
+            } else {
+                $raw_width = null;
+            }
+            
+            if ( isset( $_POST['dimension_depth'] ) ) {
+                $raw_depth_str = wp_unslash( $_POST['dimension_depth'] );
+                if ( $raw_depth_str === '' ) {
+                    // Explicit clear: empty string means set to NULL
+                    $raw_depth = null;
+                    $depth_is_clear = true;
+                } else {
+                    $raw_depth = floatval( $raw_depth_str );
+                }
+            } else {
+                $raw_depth = null;
+            }
+            
+            if ( isset( $_POST['dimension_height'] ) ) {
+                $raw_height_str = wp_unslash( $_POST['dimension_height'] );
+                if ( $raw_height_str === '' ) {
+                    // Explicit clear: empty string means set to NULL
+                    $raw_height = null;
+                    $height_is_clear = true;
+                } else {
+                    $raw_height = floatval( $raw_height_str );
+                }
+            } else {
+                $raw_height = null;
+            }
             
             // Validate dimension ranges BEFORE normalization (reject with HTTP 400)
+            // Skip validation for explicitly cleared dimensions (they will be set to NULL)
             $dimension_max_cm = 5000; // Maximum allowed dimension (50 meters)
             $dimension_min = 0.01; // Minimum allowed dimension (0.01 units)
             
             $dimension_errors = array();
             
-            if ( $raw_width !== null ) {
+            if ( $raw_width !== null && ! $width_is_clear ) {
                 if ( $raw_width <= 0 ) {
                     $dimension_errors[] = 'dimension_width must be greater than 0';
                 } elseif ( $raw_width > $dimension_max_cm ) {
                     $dimension_errors[] = sprintf( 'dimension_width exceeds maximum of %d cm', $dimension_max_cm );
                 }
             }
-            if ( $raw_depth !== null ) {
+            if ( $raw_depth !== null && ! $depth_is_clear ) {
                 if ( $raw_depth <= 0 ) {
                     $dimension_errors[] = 'dimension_depth must be greater than 0';
                 } elseif ( $raw_depth > $dimension_max_cm ) {
                     $dimension_errors[] = sprintf( 'dimension_depth exceeds maximum of %d cm', $dimension_max_cm );
                 }
             }
-            if ( $raw_height !== null ) {
+            if ( $raw_height !== null && ! $height_is_clear ) {
                 if ( $raw_height <= 0 ) {
                     $dimension_errors[] = 'dimension_height must be greater than 0';
                 } elseif ( $raw_height > $dimension_max_cm ) {
@@ -416,118 +462,236 @@ class N88_Items {
                 ), 400 );
             }
             
-            // Store original dimension values (raw user input)
-            $new_dimension_width_original = $raw_width;
-            $new_dimension_depth_original = $raw_depth;
-            $new_dimension_height_original = $raw_height;
-            
-            // Initialize normalized values
+            // Handle dimension values: explicit clear vs. normalization
+            // Initialize normalized values (preserve existing if not being updated)
             $new_dimension_width_cm = $old_dimension_width_cm;
             $new_dimension_depth_cm = $old_dimension_depth_cm;
             $new_dimension_height_cm = $old_dimension_height_cm;
+            $new_dimension_width_original = $old_dimension_width_original;
+            $new_dimension_depth_original = $old_dimension_depth_original;
+            $new_dimension_height_original = $old_dimension_height_original;
             
-            // Normalize dimensions to cm
-            if ( $raw_width !== null ) {
-                $normalized = N88_Intelligence::normalize_to_cm( $raw_width, $new_dimension_units_original );
-                if ( $normalized !== null ) {
-                    $new_dimension_width_cm = $normalized;
-                    // Validate normalized value doesn't exceed max (after conversion)
-                    if ( $new_dimension_width_cm > $dimension_max_cm ) {
-                        wp_send_json_error( array(
-                            'message' => sprintf( 'dimension_width exceeds maximum of %d cm after conversion', $dimension_max_cm ),
-                        ), 400 );
-                    }
-                    if ( $new_dimension_width_cm !== $old_dimension_width_cm ) {
+            // Process width: explicit clear or normalize
+            if ( isset( $_POST['dimension_width'] ) ) {
+                if ( $width_is_clear ) {
+                    // Explicit clear: set both original and normalized to NULL
+                    $new_dimension_width_original = null;
+                    $new_dimension_width_cm = null;
+                    if ( $old_dimension_width_cm !== null ) {
                         $dimension_changed = true;
                         $changed_fields[] = array(
                             'field' => 'dimension_width_cm',
                             'old_value' => $old_dimension_width_cm,
-                            'new_value' => $new_dimension_width_cm,
+                            'new_value' => null,
                         );
+                        $changed_fields[] = array(
+                            'field' => 'dimension_width_original',
+                            'old_value' => $old_dimension_width_original,
+                            'new_value' => null,
+                        );
+                    }
+                } else {
+                    // Normalize provided value
+                    $new_dimension_width_original = $raw_width;
+                    $normalized = N88_Intelligence::normalize_to_cm( $raw_width, $new_dimension_units_original );
+                    if ( $normalized !== null ) {
+                        $new_dimension_width_cm = $normalized;
+                        // Validate normalized value doesn't exceed max (after conversion)
+                        if ( $new_dimension_width_cm > $dimension_max_cm ) {
+                            wp_send_json_error( array(
+                                'message' => sprintf( 'dimension_width exceeds maximum of %d cm after conversion', $dimension_max_cm ),
+                            ), 400 );
+                        }
+                        if ( $new_dimension_width_cm !== $old_dimension_width_cm ) {
+                            $dimension_changed = true;
+                            $changed_fields[] = array(
+                                'field' => 'dimension_width_cm',
+                                'old_value' => $old_dimension_width_cm,
+                                'new_value' => $new_dimension_width_cm,
+                            );
+                        }
+                        if ( $new_dimension_width_original !== $old_dimension_width_original ) {
+                            $changed_fields[] = array(
+                                'field' => 'dimension_width_original',
+                                'old_value' => $old_dimension_width_original,
+                                'new_value' => $new_dimension_width_original,
+                            );
+                        }
                     }
                 }
             }
-            if ( $raw_depth !== null ) {
-                $normalized = N88_Intelligence::normalize_to_cm( $raw_depth, $new_dimension_units_original );
-                if ( $normalized !== null ) {
-                    $new_dimension_depth_cm = $normalized;
-                    if ( $new_dimension_depth_cm > $dimension_max_cm ) {
-                        wp_send_json_error( array(
-                            'message' => sprintf( 'dimension_depth exceeds maximum of %d cm after conversion', $dimension_max_cm ),
-                        ), 400 );
-                    }
-                    if ( $new_dimension_depth_cm !== $old_dimension_depth_cm ) {
+            
+            // Process depth: explicit clear or normalize
+            if ( isset( $_POST['dimension_depth'] ) ) {
+                if ( $depth_is_clear ) {
+                    // Explicit clear: set both original and normalized to NULL
+                    $new_dimension_depth_original = null;
+                    $new_dimension_depth_cm = null;
+                    if ( $old_dimension_depth_cm !== null ) {
                         $dimension_changed = true;
                         $changed_fields[] = array(
                             'field' => 'dimension_depth_cm',
                             'old_value' => $old_dimension_depth_cm,
-                            'new_value' => $new_dimension_depth_cm,
+                            'new_value' => null,
                         );
+                        $changed_fields[] = array(
+                            'field' => 'dimension_depth_original',
+                            'old_value' => $old_dimension_depth_original,
+                            'new_value' => null,
+                        );
+                    }
+                } else {
+                    // Normalize provided value
+                    $new_dimension_depth_original = $raw_depth;
+                    $normalized = N88_Intelligence::normalize_to_cm( $raw_depth, $new_dimension_units_original );
+                    if ( $normalized !== null ) {
+                        $new_dimension_depth_cm = $normalized;
+                        if ( $new_dimension_depth_cm > $dimension_max_cm ) {
+                            wp_send_json_error( array(
+                                'message' => sprintf( 'dimension_depth exceeds maximum of %d cm after conversion', $dimension_max_cm ),
+                            ), 400 );
+                        }
+                        if ( $new_dimension_depth_cm !== $old_dimension_depth_cm ) {
+                            $dimension_changed = true;
+                            $changed_fields[] = array(
+                                'field' => 'dimension_depth_cm',
+                                'old_value' => $old_dimension_depth_cm,
+                                'new_value' => $new_dimension_depth_cm,
+                            );
+                        }
+                        if ( $new_dimension_depth_original !== $old_dimension_depth_original ) {
+                            $changed_fields[] = array(
+                                'field' => 'dimension_depth_original',
+                                'old_value' => $old_dimension_depth_original,
+                                'new_value' => $new_dimension_depth_original,
+                            );
+                        }
                     }
                 }
             }
-            if ( $raw_height !== null ) {
-                $normalized = N88_Intelligence::normalize_to_cm( $raw_height, $new_dimension_units_original );
-                if ( $normalized !== null ) {
-                    $new_dimension_height_cm = $normalized;
-                    if ( $new_dimension_height_cm > $dimension_max_cm ) {
-                        wp_send_json_error( array(
-                            'message' => sprintf( 'dimension_height exceeds maximum of %d cm after conversion', $dimension_max_cm ),
-                        ), 400 );
-                    }
-                    if ( $new_dimension_height_cm !== $old_dimension_height_cm ) {
+            
+            // Process height: explicit clear or normalize
+            if ( isset( $_POST['dimension_height'] ) ) {
+                if ( $height_is_clear ) {
+                    // Explicit clear: set both original and normalized to NULL
+                    $new_dimension_height_original = null;
+                    $new_dimension_height_cm = null;
+                    if ( $old_dimension_height_cm !== null ) {
                         $dimension_changed = true;
                         $changed_fields[] = array(
                             'field' => 'dimension_height_cm',
                             'old_value' => $old_dimension_height_cm,
-                            'new_value' => $new_dimension_height_cm,
+                            'new_value' => null,
                         );
+                        $changed_fields[] = array(
+                            'field' => 'dimension_height_original',
+                            'old_value' => $old_dimension_height_original,
+                            'new_value' => null,
+                        );
+                    }
+                } else {
+                    // Normalize provided value
+                    $new_dimension_height_original = $raw_height;
+                    $normalized = N88_Intelligence::normalize_to_cm( $raw_height, $new_dimension_units_original );
+                    if ( $normalized !== null ) {
+                        $new_dimension_height_cm = $normalized;
+                        if ( $new_dimension_height_cm > $dimension_max_cm ) {
+                            wp_send_json_error( array(
+                                'message' => sprintf( 'dimension_height exceeds maximum of %d cm after conversion', $dimension_max_cm ),
+                            ), 400 );
+                        }
+                        if ( $new_dimension_height_cm !== $old_dimension_height_cm ) {
+                            $dimension_changed = true;
+                            $changed_fields[] = array(
+                                'field' => 'dimension_height_cm',
+                                'old_value' => $old_dimension_height_cm,
+                                'new_value' => $new_dimension_height_cm,
+                            );
+                        }
+                        if ( $new_dimension_height_original !== $old_dimension_height_original ) {
+                            $changed_fields[] = array(
+                                'field' => 'dimension_height_original',
+                                'old_value' => $old_dimension_height_original,
+                                'new_value' => $new_dimension_height_original,
+                            );
+                        }
                     }
                 }
             }
             
             // Update normalized dimensions and original values in database
-            // Only update fields where raw values were provided (omit NULL to preserve existing NULL)
-            if ( $raw_width !== null ) {
-                // User provided width - only add to update if value is not NULL
-                if ( $new_dimension_width_cm !== null ) {
-                    $update_data['dimension_width_cm'] = $new_dimension_width_cm;
-                    $update_format[] = '%f';
-                }
-                if ( $new_dimension_width_original !== null ) {
-                    $update_data['dimension_width_original'] = $new_dimension_width_original;
-                    $update_format[] = '%f';
-                }
-            }
-            if ( $raw_depth !== null ) {
-                // User provided depth - only add to update if value is not NULL
-                if ( $new_dimension_depth_cm !== null ) {
-                    $update_data['dimension_depth_cm'] = $new_dimension_depth_cm;
-                    $update_format[] = '%f';
-                }
-                if ( $new_dimension_depth_original !== null ) {
-                    $update_data['dimension_depth_original'] = $new_dimension_depth_original;
-                    $update_format[] = '%f';
-                }
-            }
-            if ( $raw_height !== null ) {
-                // User provided height - only add to update if value is not NULL
-                if ( $new_dimension_height_cm !== null ) {
-                    $update_data['dimension_height_cm'] = $new_dimension_height_cm;
-                    $update_format[] = '%f';
-                }
-                if ( $new_dimension_height_original !== null ) {
-                    $update_data['dimension_height_original'] = $new_dimension_height_original;
-                    $update_format[] = '%f';
+            // Fields present in POST are updated (including explicit NULL clears)
+            // Fields not in POST are omitted (preserve existing values)
+            $unit_changed_or_defaulted = false;
+            
+            if ( isset( $_POST['dimension_width'] ) ) {
+                // Width was provided (either value or explicit clear)
+                if ( $width_is_clear ) {
+                    // Explicit clear: set to NULL via separate query
+                    $dimension_null_clear_fields[] = 'dimension_width_cm';
+                    $dimension_null_clear_fields[] = 'dimension_width_original';
+                } else {
+                    // Value provided: update both original and normalized
+                    if ( $new_dimension_width_cm !== null ) {
+                        $update_data['dimension_width_cm'] = $new_dimension_width_cm;
+                        $update_format[] = '%f';
+                    }
+                    if ( $new_dimension_width_original !== null ) {
+                        $update_data['dimension_width_original'] = $new_dimension_width_original;
+                        $update_format[] = '%f';
+                    }
                 }
             }
+            if ( isset( $_POST['dimension_depth'] ) ) {
+                // Depth was provided (either value or explicit clear)
+                if ( $depth_is_clear ) {
+                    // Explicit clear: set to NULL via separate query
+                    $dimension_null_clear_fields[] = 'dimension_depth_cm';
+                    $dimension_null_clear_fields[] = 'dimension_depth_original';
+                } else {
+                    // Value provided: update both original and normalized
+                    if ( $new_dimension_depth_cm !== null ) {
+                        $update_data['dimension_depth_cm'] = $new_dimension_depth_cm;
+                        $update_format[] = '%f';
+                    }
+                    if ( $new_dimension_depth_original !== null ) {
+                        $update_data['dimension_depth_original'] = $new_dimension_depth_original;
+                        $update_format[] = '%f';
+                    }
+                }
+            }
+            if ( isset( $_POST['dimension_height'] ) ) {
+                // Height was provided (either value or explicit clear)
+                if ( $height_is_clear ) {
+                    // Explicit clear: set to NULL via separate query
+                    $dimension_null_clear_fields[] = 'dimension_height_cm';
+                    $dimension_null_clear_fields[] = 'dimension_height_original';
+                } else {
+                    // Value provided: update both original and normalized
+                    if ( $new_dimension_height_cm !== null ) {
+                        $update_data['dimension_height_cm'] = $new_dimension_height_cm;
+                        $update_format[] = '%f';
+                    }
+                    if ( $new_dimension_height_original !== null ) {
+                        $update_data['dimension_height_original'] = $new_dimension_height_original;
+                        $update_format[] = '%f';
+                    }
+                }
+            }
+            
             // Store unit if any dimension was provided (always set, defaults to 'cm' if missing)
-            if ( $raw_width !== null || $raw_depth !== null || $raw_height !== null ) {
+            if ( isset( $_POST['dimension_width'] ) || isset( $_POST['dimension_depth'] ) || isset( $_POST['dimension_height'] ) ) {
+                // Check if unit changed or was defaulted
+                $unit_was_defaulted = ( ! isset( $_POST['dimension_units_original'] ) || empty( $_POST['dimension_units_original'] ) );
+                $unit_changed = ( $new_dimension_units_original !== $old_dimension_units_original );
+                
                 $update_data['dimension_units_original'] = $new_dimension_units_original;
                 $update_format[] = '%s';
                 
-                // Log unit normalization event
-                $intelligence_events[] = 'item_unit_normalized';
+                // Only log unit normalization if unit was defaulted, changed, or conversion occurred
+                if ( $unit_was_defaulted || $unit_changed || $dimension_changed ) {
+                    $intelligence_events[] = 'item_unit_normalized';
+                }
             }
         } else {
             // No dimension input, keep existing values
@@ -541,26 +705,44 @@ class N88_Items {
         }
 
         // 2. Calculate CBM (recalculate if dimensions changed)
+        // CBM must be cleared if dimensions become incomplete (not all 3 are set)
         $new_cbm = null;
         $cbm_needs_null_clear = false; // Track if CBM needs explicit NULL clear
-        if ( $dimension_changed ) {
-            $new_cbm = N88_Intelligence::calculate_cbm( $new_dimension_width_cm, $new_dimension_depth_cm, $new_dimension_height_cm );
-            if ( $new_cbm !== $old_cbm ) {
-                // Store CBM if not NULL (omit from update_data if NULL to preserve existing)
-                // If CBM becomes NULL (incomplete dimensions), we'll clear it explicitly
-                if ( $new_cbm !== null ) {
-                    $update_data['cbm'] = $new_cbm;
-                    $update_format[] = '%f';
-                } else {
-                    // CBM is NULL - mark for explicit NULL clear
+        $dimensions_incomplete = ( $new_dimension_width_cm === null || $new_dimension_depth_cm === null || $new_dimension_height_cm === null );
+        
+        if ( $dimension_changed || $dimensions_incomplete ) {
+            if ( $dimensions_incomplete ) {
+                // Dimensions are incomplete - CBM must be NULL
+                $new_cbm = null;
+                if ( $old_cbm !== null ) {
                     $cbm_needs_null_clear = true;
+                    $changed_fields[] = array(
+                        'field' => 'cbm',
+                        'old_value' => $old_cbm,
+                        'new_value' => null,
+                    );
+                    $intelligence_events[] = 'item_cbm_recalculated';
                 }
-                $changed_fields[] = array(
-                    'field' => 'cbm',
-                    'old_value' => $old_cbm,
-                    'new_value' => $new_cbm,
-                );
-                $intelligence_events[] = 'item_cbm_recalculated';
+            } else {
+                // All dimensions present - calculate CBM
+                $new_cbm = N88_Intelligence::calculate_cbm( $new_dimension_width_cm, $new_dimension_depth_cm, $new_dimension_height_cm );
+                if ( $new_cbm !== $old_cbm ) {
+                    // Store CBM if not NULL (omit from update_data if NULL to preserve existing)
+                    // If CBM becomes NULL (incomplete dimensions), we'll clear it explicitly
+                    if ( $new_cbm !== null ) {
+                        $update_data['cbm'] = $new_cbm;
+                        $update_format[] = '%f';
+                    } else {
+                        // CBM is NULL - mark for explicit NULL clear
+                        $cbm_needs_null_clear = true;
+                    }
+                    $changed_fields[] = array(
+                        'field' => 'cbm',
+                        'old_value' => $old_cbm,
+                        'new_value' => $new_cbm,
+                    );
+                    $intelligence_events[] = 'item_cbm_recalculated';
+                }
             }
         }
 
@@ -625,6 +807,21 @@ class N88_Items {
             wp_send_json_error( array( 'message' => 'Failed to update item.' ), 500 );
         }
 
+        // Explicitly clear dimension fields to NULL if explicitly cleared
+        if ( ! empty( $dimension_null_clear_fields ) ) {
+            // Build SET clause: field1 = NULL, field2 = NULL, ...
+            $clear_parts = array();
+            foreach ( $dimension_null_clear_fields as $field ) {
+                $field_safe = sanitize_key( $field ); // Sanitize field name
+                $clear_parts[] = "`{$field_safe}` = NULL";
+            }
+            $clear_clause = implode( ', ', $clear_parts );
+            $wpdb->query( $wpdb->prepare(
+                "UPDATE {$table} SET {$clear_clause} WHERE id = %d",
+                $item_id
+            ) );
+        }
+        
         // Explicitly clear CBM to NULL if dimensions became incomplete
         if ( $cbm_needs_null_clear ) {
             $wpdb->query( $wpdb->prepare(
