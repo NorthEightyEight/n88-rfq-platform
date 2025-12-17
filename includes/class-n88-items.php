@@ -809,17 +809,35 @@ class N88_Items {
 
         // Explicitly clear dimension fields to NULL if explicitly cleared
         if ( ! empty( $dimension_null_clear_fields ) ) {
+            // Whitelist: only allow dimension fields (cm, original, units_original)
+            $allowed_dimension_fields = array(
+                'dimension_width_cm',
+                'dimension_depth_cm',
+                'dimension_height_cm',
+                'dimension_width_original',
+                'dimension_depth_original',
+                'dimension_height_original',
+                'dimension_units_original',
+            );
+            
             // Build SET clause: field1 = NULL, field2 = NULL, ...
             $clear_parts = array();
             foreach ( $dimension_null_clear_fields as $field ) {
-                $field_safe = sanitize_key( $field ); // Sanitize field name
-                $clear_parts[] = "`{$field_safe}` = NULL";
+                // Only process whitelisted fields
+                if ( in_array( $field, $allowed_dimension_fields, true ) ) {
+                    $field_safe = sanitize_key( $field ); // Sanitize field name
+                    $clear_parts[] = "{$field_safe} = NULL";
+                }
             }
-            $clear_clause = implode( ', ', $clear_parts );
-            $wpdb->query( $wpdb->prepare(
-                "UPDATE {$table} SET {$clear_clause} WHERE id = %d",
-                $item_id
-            ) );
+            
+            // Only execute query if we have valid fields to clear
+            if ( ! empty( $clear_parts ) ) {
+                $clear_clause = implode( ', ', $clear_parts );
+                $wpdb->query( $wpdb->prepare(
+                    "UPDATE {$table} SET {$clear_clause} WHERE id = %d",
+                    $item_id
+                ) );
+            }
         }
         
         // Explicitly clear CBM to NULL if dimensions became incomplete
