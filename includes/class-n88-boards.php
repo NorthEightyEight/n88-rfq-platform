@@ -26,6 +26,8 @@ class N88_Boards {
         // Register AJAX endpoints (logged-in users only)
         add_action( 'wp_ajax_n88_create_board', array( $this, 'ajax_create_board' ) );
         add_action( 'wp_ajax_n88_add_item_to_board', array( $this, 'ajax_add_item_to_board' ) );
+        // Milestone 1.3: Board layout read endpoint
+        add_action( 'wp_ajax_n88_get_board_layout', array( $this, 'ajax_get_board_layout' ) );
     }
 
     /**
@@ -198,6 +200,73 @@ class N88_Boards {
             'board_id' => $board_id,
             'item_id'  => $item_id,
             'message'  => 'Item added to board successfully.',
+        ) );
+    }
+
+    /**
+     * AJAX: Get Board Layout
+     * 
+     * Milestone 1.3: Read-only endpoint to fetch board metadata and latest layout snapshot.
+     * This endpoint is read-only: no database writes, no event writes, no side effects.
+     * 
+     * Security steps (in order):
+     * 1. Nonce check
+     * 2. Auth check
+     * 3. Ownership check
+     * 4. Fetch and return board data
+     */
+    public function ajax_get_board_layout() {
+        // Step 1: Nonce verification
+        N88_RFQ_Helpers::verify_ajax_nonce();
+
+        // Step 2: Auth check
+        if ( ! is_user_logged_in() ) {
+            wp_send_json_error( array( 'message' => 'You must be logged in to view board layout.' ), 401 );
+        }
+
+        $user_id = get_current_user_id();
+
+        // Step 3: Ownership check
+        $board_id = isset( $_REQUEST['board_id'] ) ? absint( $_REQUEST['board_id'] ) : 0;
+        if ( $board_id === 0 ) {
+            wp_send_json_error( array( 'message' => 'Invalid board ID.' ), 400 );
+        }
+
+        $board = N88_Authorization::get_board_for_user( $board_id, $user_id );
+        if ( ! $board ) {
+            wp_send_json_error( array( 'message' => 'Board not found or access denied.' ), 403 );
+        }
+
+        // Step 4: Fetch and return board data (read-only, no side effects)
+        // Parse latest_layout_json if it exists
+        $layout_data = null;
+        if ( ! empty( $board->latest_layout_json ) ) {
+            $layout_data = json_decode( $board->latest_layout_json, true );
+            // Validate JSON structure
+            if ( json_last_error() !== JSON_ERROR_NONE || ! is_array( $layout_data ) ) {
+                // Invalid JSON: treat as empty
+                $layout_data = null;
+            }
+        }
+
+        // Graceful empty state: if no layout exists, return empty structure
+        if ( $layout_data === null || ! isset( $layout_data['items'] ) || ! is_array( $layout_data['items'] ) ) {
+            $layout_data = array(
+                'items' => array(),
+            );
+        }
+
+        // Deterministic response shape: always return the same JSON keys
+        wp_send_json_success( array(
+            'board' => array(
+                'id'          => absint( $board->id ),
+                'name'        => sanitize_text_field( $board->name ),
+                'description' => ! empty( $board->description ) ? sanitize_textarea_field( $board->description ) : null,
+                'view_mode'   => sanitize_text_field( $board->view_mode ),
+                'created_at'  => sanitize_text_field( $board->created_at ),
+                'updated_at'  => sanitize_text_field( $board->updated_at ),
+            ),
+            'layout' => $layout_data,
         ) );
     }
 }
