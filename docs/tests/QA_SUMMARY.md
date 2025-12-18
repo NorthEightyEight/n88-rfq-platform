@@ -1,7 +1,7 @@
 # Commit 1.2.5 — QA / Testing Summary
 
-**Date:** [Commit Date]  
-**Commit Hash:** [To be filled after commit]
+**Date:** 2024-12-18  
+**Commit Hash:** `96f63c0c39b2984c8aa0b8bebac44ebacf926d35`
 
 ## Overview
 
@@ -80,7 +80,7 @@ This commit adds comprehensive PHPUnit tests to verify all logic built in Milest
 5. `tests/TestMaterials.php` - Material attach/detach and file linking tests
 6. `tests/TestEvents.php` - Event logging and edit history tests
 7. `tests/README.md` - Test documentation
-8. `tests/QA_SUMMARY.md` - This file
+8. `docs/tests/QA_SUMMARY.md` - This file (QA documentation location)
 9. `phpunit.xml` - PHPUnit configuration
 
 ## Running Tests
