@@ -6,9 +6,17 @@
         "php": ">=7.4",
         "smalot/pdfparser": "^2.12"
     },
+    "require-dev": {
+        "phpunit/phpunit": "^10.0"
+    },
     "autoload": {
         "psr-4": {
             "N88RFQ\\": "includes/"
         }
+    },
+    "scripts": {
+        "test": "phpunit",
+        "test:verbose": "phpunit --verbose",
+        "test:coverage": "phpunit --coverage-html coverage/"
     }
 }
