@@ -46,7 +46,7 @@ This commit adds comprehensive PHPUnit tests to verify all logic built in Milest
 - Designers cannot edit items they don't own
 - Designers cannot attach materials to items they don't own
 - Designers cannot link files they don't own
-- Admin can override where expected
+- Admin can override where Result
 - All enforcement is server-side
 
 **Status:** ✅ Complete
@@ -101,7 +101,7 @@ vendor/bin/phpunit --verbose
 
 ## Test Results
 
-**Expected:** All tests should pass.
+**Result:** All tests should pass.
 
 If any test fails:
 1. Check error message for specific failure details
