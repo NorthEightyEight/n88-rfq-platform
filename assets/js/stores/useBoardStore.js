@@ -128,7 +128,7 @@ window.N88StudioOS.useBoardStore = create((set, get) => ({
             // Find item by ID
             const itemIndex = state.items.findIndex((item) => item.id === id);
             if (itemIndex === -1) {
-                console.warn(`useBoardStore.updateLayout: item with id "${id}" not found`);
+                console.warn('useBoardStore.updateLayout: item with id ' + id + ' not found');
                 return state; // No-op: item not found
             }
 
