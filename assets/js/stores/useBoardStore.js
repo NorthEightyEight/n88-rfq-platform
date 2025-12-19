@@ -6,7 +6,7 @@
  * Pure state management for board layout. No side effects, no API calls,
  * no rendering logic. Fully serializable and deterministic.
  * 
- * @requires zustand - Must be imported: import { create } from 'zustand'
+ * @requires zustand - Must be loaded as UMD/global: window.zustand.create
  * 
  * @typedef {Object} BoardItemLayout
  * @property {string} id - Item identifier
@@ -18,7 +18,17 @@
  * @property {'photo_only'|'full'} displayMode - Display mode
  */
 
-import { create } from 'zustand';
+// Hard fail if Zustand is not available
+if (typeof window === 'undefined' || !window.zustand || typeof window.zustand.create !== 'function') {
+    throw new Error('useBoardStore: Zustand is required. Please load zustand UMD bundle before this script (window.zustand.create must exist).');
+}
+
+const create = window.zustand.create;
+
+// Initialize namespace if it doesn't exist
+if (typeof window.N88StudioOS === 'undefined') {
+    window.N88StudioOS = {};
+}
 
 /**
  * Board layout store
@@ -29,15 +39,10 @@ import { create } from 'zustand';
  * 
  * Usage in React:
  * ```jsx
- * import { useBoardStore } from './stores/useBoardStore';
- * 
- * function MyComponent() {
- *   const { items, setItems, bringToFront, updateLayout } = useBoardStore();
- *   // ...
- * }
+ * const { items, setItems, bringToFront, updateLayout } = window.N88StudioOS.useBoardStore();
  * ```
  */
-export const useBoardStore = create((set, get) => ({
+window.N88StudioOS.useBoardStore = create((set, get) => ({
     // Initial state: empty items array
     items: [],
 
@@ -58,7 +63,8 @@ export const useBoardStore = create((set, get) => ({
         }
 
         // Replace state exactly as provided (no mutation, no derivation)
-        set({ items: [...items] });
+        // Deep copy items to prevent external mutation
+        set({ items: items.map(i => ({ ...i })) });
     },
 
     /**
