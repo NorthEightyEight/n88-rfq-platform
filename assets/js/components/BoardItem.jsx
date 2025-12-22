@@ -97,17 +97,73 @@ const BoardItem = ({ item, onLayoutChanged }) => {
                     boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
                 }}
             >
-                {/* Hero image placeholder */}
+                {/* Hero image */}
                 <div
                     style={{
                         width: '100%',
                         height: item.displayMode === 'photo_only' ? '100%' : '60%',
-                        backgroundColor: '#f0f0f0',
-                        backgroundImage: 'url(https://via.placeholder.com/400x300)',
+                        backgroundColor: '#e0e0e0',
+                        backgroundImage: item.imageUrl ? `url(${item.imageUrl})` : 'none',
                         backgroundSize: 'cover',
                         backgroundPosition: 'center',
+                        position: 'relative',
                     }}
-                />
+                >
+                    {/* Toggle button for photo_only mode (overlay on image) */}
+                    {item.displayMode === 'photo_only' && (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                updateLayout(item.id, { displayMode: 'full' });
+                                // Trigger save after animation completes (300ms + small buffer)
+                                setTimeout(() => {
+                                    if (onLayoutChanged) {
+                                        onLayoutChanged({
+                                            id: item.id,
+                                            x: item.x,
+                                            y: item.y,
+                                            width: item.width,
+                                            height: item.height,
+                                            displayMode: 'full',
+                                        });
+                                    }
+                                }, 350);
+                            }}
+                            style={{
+                                position: 'absolute',
+                                top: '8px',
+                                right: '8px',
+                                padding: '4px 8px',
+                                fontSize: '11px',
+                                cursor: 'pointer',
+                                backgroundColor: '#0073aa',
+                                color: '#fff',
+                                border: 'none',
+                                borderRadius: '3px',
+                                zIndex: 10,
+                                boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                            }}
+                        >
+                            Show Full
+                        </button>
+                    )}
+                    {/* Show item ID overlay only if no image */}
+                    {!item.imageUrl && (
+                        <div style={{
+                            position: 'absolute',
+                            top: '50%',
+                            left: '50%',
+                            transform: 'translate(-50%, -50%)',
+                            backgroundColor: 'rgba(255,255,255,0.8)',
+                            padding: '4px 8px',
+                            borderRadius: '4px',
+                            fontSize: '14px',
+                            color: '#999',
+                        }}>
+                            Item {item.id}
+                        </div>
+                    )}
+                </div>
 
                 {/* Metadata section - fades in/out based on displayMode */}
                 <AnimatePresence>
@@ -129,6 +185,38 @@ const BoardItem = ({ item, onLayoutChanged }) => {
                             <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
                                 Position: {Math.round(item.x)}, {Math.round(item.y)}
                             </div>
+                            {/* Toggle button for full mode */}
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    updateLayout(item.id, { displayMode: 'photo_only' });
+                                    // Trigger save after animation completes (300ms + small buffer)
+                                    setTimeout(() => {
+                                        if (onLayoutChanged) {
+                                            onLayoutChanged({
+                                                id: item.id,
+                                                x: item.x,
+                                                y: item.y,
+                                                width: item.width,
+                                                height: item.height,
+                                                displayMode: 'photo_only',
+                                            });
+                                        }
+                                    }, 350);
+                                }}
+                                style={{
+                                    marginTop: '8px',
+                                    padding: '4px 8px',
+                                    fontSize: '11px',
+                                    cursor: 'pointer',
+                                    backgroundColor: '#0073aa',
+                                    color: '#fff',
+                                    border: 'none',
+                                    borderRadius: '3px',
+                                }}
+                            >
+                                Toggle: Photo Only
+                            </button>
                         </motion.div>
                     )}
                 </AnimatePresence>

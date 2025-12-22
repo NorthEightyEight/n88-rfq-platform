@@ -23,11 +23,58 @@
  */
 
 // Hard fail if Zustand is not available
-if (typeof window === 'undefined' || !window.zustand || typeof window.zustand.create !== 'function') {
-    throw new Error('useBoardStore: Zustand is required. Please load zustand UMD bundle before this script (window.zustand.create must exist).');
+// Zustand 3.x UMD exposes as window.zustand.default or window.zustand
+// Wait a bit if Zustand isn't loaded yet (for async script loading)
+var zustandModule = window.zustand;
+var maxRetries = 10;
+var retryCount = 0;
+
+while (!zustandModule && retryCount < maxRetries) {
+    // Wait 50ms and check again
+    if (typeof window !== 'undefined') {
+        zustandModule = window.zustand;
+    }
+    retryCount++;
+    if (!zustandModule && retryCount < maxRetries) {
+        // Synchronous wait (not ideal but works for UMD loading)
+        var start = Date.now();
+        while (Date.now() - start < 50) {
+            // Busy wait
+        }
+    }
 }
 
-const create = window.zustand.create;
+if (typeof window === 'undefined' || !zustandModule) {
+    console.error('useBoardStore: Zustand not found. window.zustand =', window.zustand);
+    console.error('useBoardStore: Available window properties:', Object.keys(window).filter(function(k) { return k.toLowerCase().includes('zustand') || k.toLowerCase().includes('zust'); }));
+    throw new Error('useBoardStore: Zustand is required. Please load zustand UMD bundle before this script (window.zustand must exist).');
+}
+
+// Handle both UMD formats: window.zustand.default (ESM) or window.zustand.create (CJS)
+// Zustand 3.7.2 UMD exports as: {__esModule: true, default: createFunction}
+var create;
+if (typeof zustandModule.create === 'function') {
+    // CJS format: window.zustand.create
+    create = zustandModule.create;
+} else if (zustandModule.default) {
+    if (typeof zustandModule.default.create === 'function') {
+        // ESM format: window.zustand.default.create
+        create = zustandModule.default.create;
+    } else if (typeof zustandModule.default === 'function') {
+        // ESM format: window.zustand.default IS the create function
+        create = zustandModule.default;
+    } else {
+        console.error('useBoardStore: Zustand default is not a function:', zustandModule.default);
+        throw new Error('useBoardStore: Zustand default export is not a function');
+    }
+} else if (typeof zustandModule === 'function') {
+    // Direct function export
+    create = zustandModule;
+} else {
+    console.error('useBoardStore: Zustand module structure:', zustandModule);
+    console.error('useBoardStore: Available properties:', Object.keys(zustandModule));
+    throw new Error('useBoardStore: Zustand create function not found. Expected window.zustand.create or window.zustand.default');
+}
 
 // Initialize namespace if it doesn't exist
 if (typeof window.N88StudioOS === 'undefined') {

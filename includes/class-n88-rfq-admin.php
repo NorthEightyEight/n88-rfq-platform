@@ -297,6 +297,16 @@ class N88_RFQ_Admin {
             array( $this, 'render_items_boards_test' )
         );
 
+        // Milestone 1.3.4a: Board Demo Harness (testing only)
+        add_submenu_page(
+            'n88-rfq-dashboard',
+            __( 'Board Demo (1.3.4a)', 'n88-rfq' ),
+            __( 'Board Demo', 'n88-rfq' ),
+            'manage_options',
+            'n88-rfq-board-demo',
+            array( $this, 'render_board_demo' )
+        );
+
         // Phase 1.2.3: Material Bank
         add_submenu_page(
             'n88-rfq-dashboard',
@@ -2471,6 +2481,433 @@ class N88_RFQ_Admin {
             });
             </script>
         </div>
+        <?php
+    }
+
+    /**
+     * Render Board Demo page (Milestone 1.3.4a - Testing Only)
+     * 
+     * Demo harness for testing board interactions without API calls.
+     */
+    public function render_board_demo() {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_die( __( 'You do not have permission to view this page.', 'n88-rfq' ) );
+        }
+
+        // Hardcoded 20 items seed data with image URLs
+        $image_urls = array(
+            'https://dev.forgemetrix.com/wp-content/uploads/2025/12/image-14.jpg',
+            'https://dev.forgemetrix.com/wp-content/uploads/2025/12/WechatIMG519.jpg',
+            'https://dev.forgemetrix.com/wp-content/uploads/2025/12/WechatIMG518.jpg',
+            'https://dev.forgemetrix.com/wp-content/uploads/2025/12/WechatIMG517.jpg',
+        );
+        $seed_items = array(
+            array( 'id' => 'item-1', 'x' => 50, 'y' => 50, 'z' => 1, 'width' => 200, 'height' => 250, 'displayMode' => 'photo_only', 'imageUrl' => $image_urls[0] ),
+            array( 'id' => 'item-2', 'x' => 300, 'y' => 50, 'z' => 2, 'width' => 200, 'height' => 250, 'displayMode' => 'full', 'imageUrl' => $image_urls[1] ),
+            array( 'id' => 'item-3', 'x' => 550, 'y' => 50, 'z' => 3, 'width' => 200, 'height' => 250, 'displayMode' => 'photo_only', 'imageUrl' => $image_urls[2] ),
+            array( 'id' => 'item-4', 'x' => 800, 'y' => 50, 'z' => 4, 'width' => 200, 'height' => 250, 'displayMode' => 'full', 'imageUrl' => $image_urls[3] ),
+            array( 'id' => 'item-5', 'x' => 1050, 'y' => 50, 'z' => 5, 'width' => 200, 'height' => 250, 'displayMode' => 'photo_only', 'imageUrl' => $image_urls[0] ),
+            array( 'id' => 'item-6', 'x' => 50, 'y' => 350, 'z' => 6, 'width' => 200, 'height' => 250, 'displayMode' => 'full', 'imageUrl' => $image_urls[1] ),
+            array( 'id' => 'item-7', 'x' => 300, 'y' => 350, 'z' => 7, 'width' => 200, 'height' => 250, 'displayMode' => 'photo_only', 'imageUrl' => $image_urls[2] ),
+            array( 'id' => 'item-8', 'x' => 550, 'y' => 350, 'z' => 8, 'width' => 200, 'height' => 250, 'displayMode' => 'full', 'imageUrl' => $image_urls[3] ),
+            array( 'id' => 'item-9', 'x' => 800, 'y' => 350, 'z' => 9, 'width' => 200, 'height' => 250, 'displayMode' => 'photo_only', 'imageUrl' => $image_urls[0] ),
+            array( 'id' => 'item-10', 'x' => 1050, 'y' => 350, 'z' => 10, 'width' => 200, 'height' => 250, 'displayMode' => 'full', 'imageUrl' => $image_urls[1] ),
+            array( 'id' => 'item-11', 'x' => 50, 'y' => 650, 'z' => 11, 'width' => 200, 'height' => 250, 'displayMode' => 'photo_only', 'imageUrl' => $image_urls[2] ),
+            array( 'id' => 'item-12', 'x' => 300, 'y' => 650, 'z' => 12, 'width' => 200, 'height' => 250, 'displayMode' => 'full', 'imageUrl' => $image_urls[3] ),
+            array( 'id' => 'item-13', 'x' => 550, 'y' => 650, 'z' => 13, 'width' => 200, 'height' => 250, 'displayMode' => 'photo_only', 'imageUrl' => $image_urls[0] ),
+            array( 'id' => 'item-14', 'x' => 800, 'y' => 650, 'z' => 14, 'width' => 200, 'height' => 250, 'displayMode' => 'full', 'imageUrl' => $image_urls[1] ),
+            array( 'id' => 'item-15', 'x' => 1050, 'y' => 650, 'z' => 15, 'width' => 200, 'height' => 250, 'displayMode' => 'photo_only', 'imageUrl' => $image_urls[2] ),
+            array( 'id' => 'item-16', 'x' => 50, 'y' => 950, 'z' => 16, 'width' => 200, 'height' => 250, 'displayMode' => 'full', 'imageUrl' => $image_urls[3] ),
+            array( 'id' => 'item-17', 'x' => 300, 'y' => 950, 'z' => 17, 'width' => 200, 'height' => 250, 'displayMode' => 'photo_only', 'imageUrl' => $image_urls[0] ),
+            array( 'id' => 'item-18', 'x' => 550, 'y' => 950, 'z' => 18, 'width' => 200, 'height' => 250, 'displayMode' => 'full', 'imageUrl' => $image_urls[1] ),
+            array( 'id' => 'item-19', 'x' => 800, 'y' => 950, 'z' => 19, 'width' => 200, 'height' => 250, 'displayMode' => 'photo_only', 'imageUrl' => $image_urls[2] ),
+            array( 'id' => 'item-20', 'x' => 1050, 'y' => 950, 'z' => 20, 'width' => 200, 'height' => 250, 'displayMode' => 'full', 'imageUrl' => $image_urls[3] ),
+        );
+
+        // Enqueue dependencies from CDN
+        wp_enqueue_script( 'react', 'https://unpkg.com/react@18/umd/react.production.min.js', array(), '18.2.0', false );
+        wp_enqueue_script( 'react-dom', 'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js', array( 'react' ), '18.2.0', false );
+        wp_enqueue_script( 'framer-motion', 'https://unpkg.com/framer-motion@10/dist/framer-motion.js', array( 'react', 'react-dom' ), '10.16.0', false );
+        // Use Zustand 3.x which has better UMD support
+        // Load in footer to ensure React is available first
+        wp_enqueue_script( 'zustand', 'https://unpkg.com/zustand@3.7.2/umd/index.production.js', array( 'react' ), '3.7.2', true );
+
+        // Enqueue our store AFTER Zustand loads
+        // Add cache busting and ensure proper load order
+        $plugin_url = N88_RFQ_PLUGIN_URL;
+        wp_enqueue_script( 'n88-board-store', $plugin_url . 'assets/js/stores/useBoardStore.js', array( 'zustand', 'react' ), N88_RFQ_VERSION . '?v=' . time(), true );
+        
+        // Milestone 1.3.5: Enqueue debounced save hook
+        wp_enqueue_script( 'n88-debounced-save', $plugin_url . 'assets/js/hooks/useDebouncedSave.js', array( 'react' ), N88_RFQ_VERSION . '?v=' . time(), true );
+        
+        // Enqueue components
+        wp_enqueue_script( 'n88-board-item', $plugin_url . 'assets/js/components/BoardItem.jsx', array( 'react', 'framer-motion', 'n88-board-store' ), N88_RFQ_VERSION . '?v=' . time(), true );
+        wp_enqueue_script( 'n88-unsynced-toast', $plugin_url . 'assets/js/components/UnsyncedToast.jsx', array( 'react', 'framer-motion' ), N88_RFQ_VERSION . '?v=' . time(), true );
+        wp_enqueue_script( 'n88-board-canvas', $plugin_url . 'assets/js/components/BoardCanvas.jsx', array( 'react', 'n88-board-store', 'n88-debounced-save', 'n88-board-item', 'n88-unsynced-toast' ), N88_RFQ_VERSION . '?v=' . time(), true );
+        
+        // Localize script for AJAX URL and nonce
+        wp_localize_script( 'n88-debounced-save', 'n88BoardNonce', wp_create_nonce( 'n88_rfq_nonce' ) );
+        ?>
+        <div class="wrap">
+            <h1>Board Demo (Milestone 1.3.4a)</h1>
+            <p><strong>Testing Only:</strong> This page demonstrates board interactions without API calls.</p>
+            <div id="n88-board-demo-root"></div>
+            <div id="n88-board-demo-debug" style="position: fixed; bottom: 10px; right: 10px; background: #fff; padding: 10px; border: 1px solid #ccc; z-index: 9999; font-size: 12px; max-width: 300px;">
+                <div>Loading...</div>
+            </div>
+        </div>
+        <!-- Verify Zustand loads correctly -->
+        <script>
+        console.log('Checking Zustand before store loads...');
+        if (typeof window.zustand !== 'undefined') {
+            console.log('Zustand found:', window.zustand);
+            console.log('Zustand keys:', Object.keys(window.zustand));
+        } else {
+            console.warn('Zustand not found yet, will check again after scripts load');
+        }
+        </script>
+        <script>
+        (function() {
+            function updateDebug(msg) {
+                const debugEl = document.getElementById('n88-board-demo-debug');
+                if (debugEl) debugEl.innerHTML = '<div>' + msg + '</div>';
+            }
+
+            function initBoard() {
+                // Check all dependencies
+                if (typeof window.React === 'undefined') {
+                    updateDebug('Waiting for React...');
+                    return false;
+                }
+                if (typeof window.ReactDOM === 'undefined') {
+                    updateDebug('Waiting for ReactDOM...');
+                    return false;
+                }
+                // Framer Motion can expose as window.motion or window.framerMotion
+                // Check multiple possible locations
+                var framerMotion = window.motion || window.framerMotion || window.Motion || (window.framer && window.framer.motion);
+                if (!framerMotion) {
+                    updateDebug('Waiting for Framer Motion... (checking window.motion, window.framerMotion, window.Motion)');
+                    console.log('Framer Motion check - window.motion:', window.motion);
+                    console.log('Framer Motion check - window.framerMotion:', window.framerMotion);
+                    console.log('Framer Motion check - window.Motion:', window.Motion);
+                    console.log('Framer Motion check - window.framer:', window.framer);
+                    return false;
+                }
+                // Zustand might expose as window.zustand or window.zustand.default
+                var zustandModule = window.zustand;
+                if (!zustandModule) {
+                    updateDebug('Waiting for Zustand... (checking window.zustand)');
+                    return false;
+                }
+                // Check if create function exists (Zustand 3.x format)
+                // Zustand 3.7.2 exposes as {__esModule: true, default: createFunction}
+                var hasCreate = (zustandModule.create && typeof zustandModule.create === 'function') ||
+                               (zustandModule.default && typeof zustandModule.default === 'function') ||
+                               (zustandModule.default && zustandModule.default.create && typeof zustandModule.default.create === 'function');
+                if (!hasCreate) {
+                    updateDebug('Waiting for Zustand create function...');
+                    console.log('Zustand module:', zustandModule);
+                    console.log('Zustand.default:', zustandModule.default);
+                    console.log('Zustand.default type:', typeof zustandModule.default);
+                    return false;
+                }
+                if (typeof window.N88StudioOS === 'undefined' || typeof window.N88StudioOS.useBoardStore === 'undefined') {
+                    updateDebug('Waiting for useBoardStore...');
+                    return false;
+                }
+
+                updateDebug('All dependencies loaded!');
+
+                const React = window.React;
+                const ReactDOM = window.ReactDOM;
+                
+                // Extract motion components - Framer Motion UMD exposes as an object
+                var motion, AnimatePresence, useMotionValue;
+                console.log('Framer Motion structure:', framerMotion);
+                console.log('Framer Motion type:', typeof framerMotion);
+                console.log('Framer Motion keys:', framerMotion ? Object.keys(framerMotion) : 'null');
+                
+                if (typeof framerMotion === 'object' && framerMotion !== null) {
+                    // Check if it's the motion object itself or contains motion
+                    if (framerMotion.motion) {
+                        motion = framerMotion.motion;
+                        AnimatePresence = framerMotion.AnimatePresence || framerMotion.motion.AnimatePresence;
+                        useMotionValue = framerMotion.useMotionValue || framerMotion.motion.useMotionValue;
+                    } else if (typeof framerMotion === 'function') {
+                        // Direct function export
+                        motion = framerMotion;
+                        AnimatePresence = window.AnimatePresence || framerMotion.AnimatePresence;
+                        useMotionValue = window.useMotionValue || framerMotion.useMotionValue;
+                    } else {
+                        // Try to use it directly
+                        motion = framerMotion;
+                        AnimatePresence = framerMotion.AnimatePresence || window.AnimatePresence;
+                        useMotionValue = framerMotion.useMotionValue || window.useMotionValue;
+                    }
+                } else {
+                    motion = framerMotion;
+                    AnimatePresence = window.AnimatePresence;
+                    useMotionValue = window.useMotionValue;
+                }
+                
+                console.log('Extracted motion:', motion);
+                console.log('Extracted AnimatePresence:', AnimatePresence);
+                console.log('Extracted useMotionValue:', useMotionValue);
+                
+                if (!motion || !AnimatePresence || !useMotionValue) {
+                    updateDebug('ERROR: Missing Framer Motion components. motion=' + !!motion + ', AnimatePresence=' + !!AnimatePresence + ', useMotionValue=' + !!useMotionValue);
+                    return false;
+                }
+                
+                const useBoardStore = window.N88StudioOS.useBoardStore;
+                const useDebouncedSave = window.N88StudioOS.useDebouncedSave;
+
+                // Seed data
+                const seedItems = <?php echo wp_json_encode( $seed_items ); ?>;
+                
+                // Test board ID (0 = no persistence, set to actual board ID for real saves)
+                const testBoardId = 0; // Change to actual board ID for testing persistence
+
+                // Initialize store
+                const store = useBoardStore.getState();
+                store.setItems(seedItems);
+
+                // BoardItem Component
+                const BoardItem = ({ item, onLayoutChanged }) => {
+                    const bringToFront = useBoardStore((state) => state.bringToFront);
+                    const updateLayout = useBoardStore((state) => state.updateLayout);
+                    
+                    const x = useMotionValue(item.x);
+                    const y = useMotionValue(item.y);
+
+                    React.useEffect(() => {
+                        x.set(item.x);
+                        y.set(item.y);
+                    }, [item.x, item.y]);
+
+                    const handleDragStart = () => {
+                        bringToFront(item.id);
+                    };
+
+                    const handleDragEnd = (event, info) => {
+                        const newX = x.get();
+                        const newY = y.get();
+                        updateLayout(item.id, { x: newX, y: newY });
+                        if (onLayoutChanged) {
+                            onLayoutChanged({ id: item.id, x: newX, y: newY, width: item.width, height: item.height, displayMode: item.displayMode });
+                        }
+                    };
+
+                    return React.createElement(motion.div, {
+                        layoutId: 'board-item-' + item.id,
+                        style: { position: 'absolute', x: x, y: y, width: item.width, height: item.height, zIndex: item.z, cursor: 'grab' },
+                        drag: true,
+                        dragMomentum: false,
+                        onDragStart: handleDragStart,
+                        onDragEnd: handleDragEnd,
+                        whileDrag: { cursor: 'grabbing', scale: 1.05 },
+                        transition: { layout: { duration: 0.3, ease: 'easeOut' } },
+                    }, React.createElement('div', {
+                        style: { width: '100%', height: '100%', backgroundColor: '#ffffff', border: '1px solid #e0e0e0', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)' },
+                    }, React.createElement('div', {
+                        style: { 
+                            width: '100%', 
+                            height: item.displayMode === 'photo_only' ? '100%' : '60%', 
+                            backgroundColor: '#e0e0e0', 
+                            backgroundImage: item.imageUrl ? 'url(' + item.imageUrl + ')' : 'none',
+                            backgroundSize: 'cover',
+                            backgroundPosition: 'center',
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'center', 
+                            color: '#999', 
+                            fontSize: '14px',
+                            position: 'relative'
+                        },
+                    }, 
+                    // Toggle button for photo_only mode (overlay on image)
+                    item.displayMode === 'photo_only' && React.createElement('button', {
+                        onClick: function(e) { 
+                            e.stopPropagation(); 
+                            updateLayout(item.id, { displayMode: 'full' }); 
+                            // Trigger save after animation completes (350ms)
+                            setTimeout(function() {
+                                if (onLayoutChanged) {
+                                    onLayoutChanged({ id: item.id, x: item.x, y: item.y, width: item.width, height: item.height, displayMode: 'full' });
+                                }
+                            }, 350);
+                        },
+                        style: { 
+                            position: 'absolute',
+                            top: '8px',
+                            right: '8px',
+                            padding: '4px 8px', 
+                            fontSize: '11px', 
+                            cursor: 'pointer', 
+                            backgroundColor: '#0073aa', 
+                            color: '#fff', 
+                            border: 'none', 
+                            borderRadius: '3px',
+                            zIndex: 10,
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                        },
+                    }, 'Show Full'),
+                    // Item ID text overlay (only show if no image or for debugging)
+                    !item.imageUrl && React.createElement('div', { style: { textAlign: 'center', position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', backgroundColor: 'rgba(255,255,255,0.8)', padding: '4px 8px', borderRadius: '4px' } }, 'Item ' + item.id)
+                    ), 
+                    // Metadata section for full mode
+                    React.createElement(AnimatePresence, null, item.displayMode === 'full' && React.createElement(motion.div, {
+                        key: 'metadata',
+                        initial: { opacity: 0, height: 0 },
+                        animate: { opacity: 1, height: 'auto' },
+                        exit: { opacity: 0, height: 0 },
+                        transition: { duration: 0.3 },
+                        style: { padding: '12px', backgroundColor: '#ffffff' },
+                    }, React.createElement('div', { style: { fontSize: '14px', fontWeight: 'bold' } }, 'Item ' + item.id), React.createElement('div', { style: { fontSize: '12px', color: '#666', marginTop: '4px' } }, 'Position: ' + Math.round(item.x) + ', ' + Math.round(item.y)), React.createElement('button', {
+                        onClick: function(e) { 
+                            e.stopPropagation(); 
+                            updateLayout(item.id, { displayMode: 'photo_only' }); 
+                            // Trigger save after animation completes (350ms)
+                            setTimeout(function() {
+                                if (onLayoutChanged) {
+                                    onLayoutChanged({ id: item.id, x: item.x, y: item.y, width: item.width, height: item.height, displayMode: 'photo_only' });
+                                }
+                            }, 350);
+                        },
+                        style: { marginTop: '8px', padding: '4px 8px', fontSize: '11px', cursor: 'pointer', backgroundColor: '#0073aa', color: '#fff', border: 'none', borderRadius: '3px' },
+                    }, 'Toggle: Photo Only')))));
+                };
+
+                // UnsyncedToast Component
+                const UnsyncedToast = ({ unsynced, onDismiss }) => {
+                    if (!unsynced) return null;
+                    return React.createElement(AnimatePresence, null, unsynced && React.createElement(motion.div, {
+                        initial: { opacity: 0, y: -20 },
+                        animate: { opacity: 1, y: 0 },
+                        exit: { opacity: 0, y: -20 },
+                        transition: { duration: 0.2 },
+                        style: {
+                            position: 'fixed',
+                            top: '20px',
+                            right: '20px',
+                            backgroundColor: '#ff9800',
+                            color: '#fff',
+                            padding: '12px 16px',
+                            borderRadius: '4px',
+                            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
+                            zIndex: 10000,
+                            fontSize: '14px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            maxWidth: '300px',
+                        },
+                    }, React.createElement('span', null, '⚠️ Changes not saved'), onDismiss && React.createElement('button', {
+                        onClick: onDismiss,
+                        style: {
+                            background: 'transparent',
+                            border: 'none',
+                            color: '#fff',
+                            cursor: 'pointer',
+                            fontSize: '18px',
+                            padding: '0',
+                            marginLeft: '8px',
+                            lineHeight: '1',
+                        },
+                    }, '×')));
+                };
+
+                // BoardCanvas Component
+                const BoardCanvas = function({ boardId, onLayoutChanged }) {
+                    var items = useBoardStore(function(state) { return state.items; });
+                    var getItems = useBoardStore(function(state) { return function() { return state.items; }; });
+                    
+                    // Initialize debounced save hook (must be called unconditionally for React hooks rules)
+                    // Pass boardId (can be 0 for demo mode - hook will handle it gracefully)
+                    var saveHook = null;
+                    if (useDebouncedSave) {
+                        saveHook = useDebouncedSave(boardId || 0, getItems);
+                    }
+                    
+                    // Handle layout changes - trigger debounced save
+                    var handleLayoutChanged = function(data) {
+                        if (onLayoutChanged) {
+                            onLayoutChanged(data);
+                        }
+                        // Only trigger save if boardId is valid and hook is available
+                        if (saveHook && saveHook.triggerSave && boardId && boardId > 0) {
+                            saveHook.triggerSave();
+                        }
+                    };
+                    
+                    if (!items || items.length === 0) {
+                        return React.createElement('div', { style: { padding: '20px' } }, 'No items loaded. Items count: ' + (items ? items.length : 0));
+                    }
+                    
+                    // Use relative positioning within the admin page container
+                    return React.createElement(React.Fragment, null,
+                        React.createElement('div', {
+                            style: { 
+                                position: 'relative', 
+                                width: '100%', 
+                                minHeight: '1200px', 
+                                height: 'auto',
+                                overflow: 'visible', 
+                                backgroundColor: '#f5f5f5',
+                                marginTop: '20px',
+                                padding: '20px',
+                                border: '1px solid #ddd',
+                                borderRadius: '4px'
+                            },
+                        }, items.map(function(item) {
+                            return React.createElement(BoardItem, { key: item.id, item: item, onLayoutChanged: handleLayoutChanged });
+                        })),
+                        saveHook ? React.createElement(UnsyncedToast, { unsynced: saveHook.unsynced, onDismiss: saveHook.clearUnsynced }) : null
+                    );
+                };
+
+                // Render
+                const rootEl = document.getElementById('n88-board-demo-root');
+                if (!rootEl) {
+                    updateDebug('ERROR: Root element not found!');
+                    return false;
+                }
+
+                try {
+                    const root = ReactDOM.createRoot(rootEl);
+                    root.render(React.createElement(BoardCanvas, {
+                        boardId: testBoardId,
+                        onLayoutChanged: function(data) { console.log('Layout changed:', data); },
+                    }));
+                    updateDebug('Board rendered! Items: ' + seedItems.length + (testBoardId > 0 ? ' (Persistence enabled)' : ' (Demo mode - no persistence)'));
+                    return true;
+                } catch (e) {
+                    updateDebug('ERROR: ' + e.message);
+                    console.error('Board render error:', e);
+                    return false;
+                }
+            }
+
+            // Wait for dependencies to load
+            var checkCount = 0;
+            var maxChecks = 50; // 5 seconds max
+            var checkInterval = setInterval(function() {
+                checkCount++;
+                if (initBoard()) {
+                    clearInterval(checkInterval);
+                    // Hide debug after 3 seconds
+                    setTimeout(function() {
+                        var debugEl = document.getElementById('n88-board-demo-debug');
+                        if (debugEl) debugEl.style.display = 'none';
+                    }, 3000);
+                } else if (checkCount >= maxChecks) {
+                    clearInterval(checkInterval);
+                    updateDebug('ERROR: Timeout waiting for dependencies');
+                }
+            }, 100);
+        })();
+        </script>
         <?php
     }
 }
