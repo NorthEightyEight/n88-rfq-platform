@@ -60,7 +60,7 @@
                 client_revision: revision,
             };
 
-            // Store pending save info
+            // Store pending save info (for reference, but we'll use the revision parameter directly)
             pendingSaveRef.current = {
                 revision: revision,
                 timestamp: Date.now(),
@@ -90,9 +90,10 @@
             })
             .then(function(data) {
                 // Check if this response matches the latest client revision
+                // Compare the revision that was sent with the current revision
                 // If not, ignore it (stale response)
-                if (pendingSaveRef.current && pendingSaveRef.current.revision !== clientRevisionRef.current) {
-                    console.log('useDebouncedSave: Ignoring stale response (revision ' + pendingSaveRef.current.revision + ' vs current ' + clientRevisionRef.current + ')');
+                if (revision !== clientRevisionRef.current) {
+                    console.log('useDebouncedSave: Ignoring stale response (revision ' + revision + ' vs current ' + clientRevisionRef.current + ')');
                     return;
                 }
 
@@ -110,9 +111,9 @@
             })
             .catch(function(error) {
                 // Network error or other failure
-                // Check if this is still the latest revision
-                if (pendingSaveRef.current && pendingSaveRef.current.revision !== clientRevisionRef.current) {
-                    console.log('useDebouncedSave: Ignoring stale error (revision ' + pendingSaveRef.current.revision + ' vs current ' + clientRevisionRef.current + ')');
+                // Check if this is still the latest revision (compare sent revision with current)
+                if (revision !== clientRevisionRef.current) {
+                    console.log('useDebouncedSave: Ignoring stale error (revision ' + revision + ' vs current ' + clientRevisionRef.current + ')');
                     return;
                 }
 

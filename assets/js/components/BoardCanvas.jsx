@@ -30,7 +30,12 @@ const useDebouncedSave = window.N88StudioOS?.useDebouncedSave || (() => {
  */
 const BoardCanvas = ({ boardId, onLayoutChanged }) => {
     const items = useBoardStore((state) => state.items);
-    const getItems = useBoardStore((state) => () => state.items);
+    
+    // Use Zustand's store getter to avoid stale state
+    const getItems = React.useCallback(
+        () => window.N88StudioOS.useBoardStore.getState().items,
+        []
+    );
 
     // Initialize debounced save hook
     const { triggerSave, unsynced, clearUnsynced } = useDebouncedSave(boardId || 0, getItems);

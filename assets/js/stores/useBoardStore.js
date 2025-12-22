@@ -24,31 +24,12 @@
 
 // Hard fail if Zustand is not available
 // Zustand 3.x UMD exposes as window.zustand.default or window.zustand
-// Wait a bit if Zustand isn't loaded yet (for async script loading)
-var zustandModule = window.zustand;
-var maxRetries = 10;
-var retryCount = 0;
-
-while (!zustandModule && retryCount < maxRetries) {
-    // Wait 50ms and check again
-    if (typeof window !== 'undefined') {
-        zustandModule = window.zustand;
-    }
-    retryCount++;
-    if (!zustandModule && retryCount < maxRetries) {
-        // Synchronous wait (not ideal but works for UMD loading)
-        var start = Date.now();
-        while (Date.now() - start < 50) {
-            // Busy wait
-        }
-    }
-}
-
-if (typeof window === 'undefined' || !zustandModule) {
-    console.error('useBoardStore: Zustand not found. window.zustand =', window.zustand);
-    console.error('useBoardStore: Available window properties:', Object.keys(window).filter(function(k) { return k.toLowerCase().includes('zustand') || k.toLowerCase().includes('zust'); }));
+// Dependency order is handled via WordPress enqueue (zustand loads before useBoardStore)
+if (typeof window === 'undefined' || !window.zustand) {
     throw new Error('useBoardStore: Zustand is required. Please load zustand UMD bundle before this script (window.zustand must exist).');
 }
+
+var zustandModule = window.zustand;
 
 // Handle both UMD formats: window.zustand.default (ESM) or window.zustand.create (CJS)
 // Zustand 3.7.2 UMD exports as: {__esModule: true, default: createFunction}
