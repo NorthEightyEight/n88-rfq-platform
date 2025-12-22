@@ -184,7 +184,7 @@ const BoardItem = ({ item, onLayoutChanged }) => {
                 zIndex: item.z,
                 cursor: resizeState.isResizing ? 'nwse-resize' : 'grab',
             }}
-            drag
+            drag={!resizeState.isResizing}
             dragMomentum={false}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
@@ -230,8 +230,8 @@ const BoardItem = ({ item, onLayoutChanged }) => {
                                             id: item.id,
                                             x: item.x,
                                             y: item.y,
-                                            width: item.width,
-                                            height: item.height,
+                                            width: currentWidth,
+                                            height: currentHeight,
                                             displayMode: 'full',
                                         });
                                     }
@@ -301,14 +301,14 @@ const BoardItem = ({ item, onLayoutChanged }) => {
                                     // Trigger save after animation completes (300ms + small buffer)
                                     setTimeout(() => {
                                         if (onLayoutChanged) {
-                                            onLayoutChanged({
-                                                id: item.id,
-                                                x: item.x,
-                                                y: item.y,
-                                                width: item.width,
-                                                height: item.height,
-                                                displayMode: 'photo_only',
-                                            });
+                                        onLayoutChanged({
+                                            id: item.id,
+                                            x: item.x,
+                                            y: item.y,
+                                            width: currentWidth,
+                                            height: currentHeight,
+                                            displayMode: 'photo_only',
+                                        });
                                         }
                                     }, 350);
                                 }}
