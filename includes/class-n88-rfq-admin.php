@@ -2540,10 +2540,128 @@ class N88_RFQ_Admin {
         // Milestone 1.3.5: Enqueue debounced save hook
         wp_enqueue_script( 'n88-debounced-save', $plugin_url . 'assets/js/hooks/useDebouncedSave.js', array( 'react' ), N88_RFQ_VERSION . '?v=' . time(), true );
         
-        // Enqueue components
-        wp_enqueue_script( 'n88-board-item', $plugin_url . 'assets/js/components/BoardItem.jsx', array( 'react', 'framer-motion', 'n88-board-store' ), N88_RFQ_VERSION . '?v=' . time(), true );
-        wp_enqueue_script( 'n88-unsynced-toast', $plugin_url . 'assets/js/components/UnsyncedToast.jsx', array( 'react', 'framer-motion' ), N88_RFQ_VERSION . '?v=' . time(), true );
-        wp_enqueue_script( 'n88-board-canvas', $plugin_url . 'assets/js/components/BoardCanvas.jsx', array( 'react', 'n88-board-store', 'n88-debounced-save', 'n88-board-item', 'n88-unsynced-toast' ), N88_RFQ_VERSION . '?v=' . time(), true );
+        // Note: JSX files are not enqueued - we use inline React.createElement code instead
+        // This avoids ES6 module import errors in WordPress
+        
+        // Global stuck-state recovery function (can be called from console)
+        // Usage: window.N88StudioOS.recoverStuckResize()
+        wp_add_inline_script('n88-board-store', '
+            (function() {
+                if (typeof window.N88StudioOS === "undefined") {
+                    window.N88StudioOS = {};
+                }
+                
+                // Global recovery function
+                window.N88StudioOS.recoverStuckResize = function() {
+                    console.warn("N88StudioOS: Global stuck-state recovery triggered");
+                    // Force reset all cursor styles
+                    if (document.body) {
+                        document.body.style.cursor = "";
+                        document.body.style.pointerEvents = "";
+                    }
+                    // Force remove all resize-related event listeners
+                    const events = ["mousemove", "mouseup", "mouseleave", "blur", "contextmenu", "pointerup", "pointerleave", "pointerout", "mouseout", "focusout"];
+                    events.forEach(function(eventName) {
+                        const dummy = function() {};
+                        document.removeEventListener(eventName, dummy, true);
+                        document.removeEventListener(eventName, dummy, false);
+                        window.removeEventListener(eventName, dummy, true);
+                        window.removeEventListener(eventName, dummy, false);
+                    });
+                    console.log("N88StudioOS: Recovery complete - try interacting with items now");
+                };
+                
+                // Global watchdog: Monitor for stuck resize states every 2 seconds (less aggressive to prevent performance issues)
+                // This runs independently and can recover from any stuck state
+                // CRITICAL: After many resizes, listeners can accumulate - this cleans them up
+                var watchdogInterval = setInterval(function() {
+                    try {
+                        // Check global active resizes tracker
+                        if (window.N88StudioOS && window.N88StudioOS.activeResizes && window.N88StudioOS.activeResizes.size > 0) {
+                            var now = Date.now();
+                            var lastMouseMove = window._lastMouseMoveTime || 0;
+                            var timeSinceLastMove = now - lastMouseMove;
+                            
+                            // If mouse has not moved for 2 seconds but resize is still active, force cleanup
+                            if (timeSinceLastMove > 2000) {
+                                console.warn("N88StudioOS: Watchdog detected stuck resize (no mouse activity for 2s) - auto-recovering");
+                                window.N88StudioOS.recoverStuckResize();
+                                // Clear all active resizes
+                                window.N88StudioOS.activeResizes.clear();
+                            }
+                        }
+                        
+                        // Also check cursor state
+                        if (document.body && document.body.style.cursor === "nwse-resize") {
+                            var lastMouseMove = window._lastMouseMoveTime || 0;
+                            var now = Date.now();
+                            if (now - lastMouseMove > 2000) {
+                                console.warn("N88StudioOS: Watchdog detected stuck resize (cursor stuck) - auto-recovering");
+                                window.N88StudioOS.recoverStuckResize();
+                                if (window.N88StudioOS && window.N88StudioOS.activeResizes) {
+                                    window.N88StudioOS.activeResizes.clear();
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        // Silently fail - watchdog should never break
+                        console.warn("N88StudioOS: Watchdog error (non-critical):", e);
+                    }
+                }, 2000); // Check every 2 seconds (less aggressive to prevent performance issues)
+                
+                // Store interval ID for cleanup if needed
+                window.N88StudioOS.watchdogInterval = watchdogInterval;
+                
+                // Track mouse movement globally for watchdog
+                document.addEventListener("mousemove", function() {
+                    window._lastMouseMoveTime = Date.now();
+                }, { passive: true });
+                
+                // Track mouseup globally (helps detect when resize should end)
+                // CRITICAL: This catches cases where resize end handler does not fire
+                document.addEventListener("mouseup", function(e) {
+                    window._lastMouseUpTime = Date.now();
+                    
+                    // Immediate cleanup check (do not wait)
+                    if (document.body && document.body.style.cursor === "nwse-resize") {
+                        console.warn("N88StudioOS: Mouseup detected with resize cursor - forcing immediate cleanup");
+                        window.N88StudioOS.recoverStuckResize();
+                        if (window.N88StudioOS && window.N88StudioOS.activeResizes) {
+                            window.N88StudioOS.activeResizes.clear();
+                        }
+                    }
+                    
+                    // Also check after 100ms (faster than before)
+                    setTimeout(function() {
+                        if (document.body && document.body.style.cursor === "nwse-resize") {
+                            console.warn("N88StudioOS: Mouseup detected but cursor still resize after 100ms - forcing cleanup");
+                            window.N88StudioOS.recoverStuckResize();
+                            if (window.N88StudioOS && window.N88StudioOS.activeResizes) {
+                                window.N88StudioOS.activeResizes.clear();
+                            }
+                        }
+                    }, 100);
+                }, { passive: true, capture: true }); // Use capture to catch early
+                
+                // CRITICAL: Global click handler to force end stuck resize/drag
+                // This catches clicks anywhere on the page during resize/drag
+                document.addEventListener("click", function(e) {
+                    // Only act if resize cursor is stuck or active resizes exist
+                    if (document.body && document.body.style.cursor === "nwse-resize") {
+                        console.warn("N88StudioOS: Click detected with resize cursor - forcing cleanup");
+                        window.N88StudioOS.recoverStuckResize();
+                        if (window.N88StudioOS && window.N88StudioOS.activeResizes) {
+                            window.N88StudioOS.activeResizes.clear();
+                        }
+                    } else if (window.N88StudioOS && window.N88StudioOS.activeResizes && window.N88StudioOS.activeResizes.size > 0) {
+                        // If there are active resizes but cursor is not stuck, still force cleanup
+                        console.warn("N88StudioOS: Click detected with active resizes - forcing cleanup");
+                        window.N88StudioOS.recoverStuckResize();
+                        window.N88StudioOS.activeResizes.clear();
+                    }
+                }, { passive: true, capture: true }); // Use capture to catch early
+            })();
+        ', 'after');
         
         // Localize script for AJAX URL and nonce
         wp_localize_script( 'n88-debounced-save', 'n88BoardNonce', wp_create_nonce( 'n88_rfq_nonce' ) );
@@ -2696,9 +2814,18 @@ class N88_RFQ_Admin {
                     const MIN_WIDTH = 100;
                     const MIN_HEIGHT = 100;
                     
+                    // Maximum dimensions (80% of viewport)
+                    const MAX_WIDTH = Math.floor(0.8 * (typeof window !== 'undefined' ? window.innerWidth : 1920));
+                    const MAX_HEIGHT = Math.floor(0.8 * (typeof window !== 'undefined' ? window.innerHeight : 1080));
+                    
                     // Current dimensions (use resize preview if resizing, otherwise use store)
-                    const currentWidth = resizeStateValue.isResizing ? resizeStateValue.currentWidth : item.width;
-                    const currentHeight = resizeStateValue.isResizing ? resizeStateValue.currentHeight : item.height;
+                    // If resize just ended, use the final dimensions from resize state until store updates
+                    const currentWidth = resizeStateValue.isResizing 
+                        ? resizeStateValue.currentWidth 
+                        : (resizeStateValue.currentWidth !== undefined ? resizeStateValue.currentWidth : item.width);
+                    const currentHeight = resizeStateValue.isResizing 
+                        ? resizeStateValue.currentHeight 
+                        : (resizeStateValue.currentHeight !== undefined ? resizeStateValue.currentHeight : item.height);
 
                     React.useEffect(() => {
                         x.set(item.x);
@@ -2722,6 +2849,34 @@ class N88_RFQ_Admin {
                     const handleResizeStart = function(e) {
                         e.stopPropagation();
                         e.preventDefault();
+                        
+                        // Safety: Force end any existing resize first (prevent stuck state on multiple resizes)
+                        if (resizeStateValue.isResizing) {
+                            console.warn('BoardItem: Previous resize still active - forcing end before new resize');
+                            setResizeState(function(prev) {
+                                return {
+                                    ...prev,
+                                    isResizing: false,
+                                    startX: 0,
+                                    startY: 0,
+                                    startWidth: 0,
+                                    startHeight: 0,
+                                    currentWidth: undefined,
+                                    currentHeight: undefined,
+                                };
+                            });
+                            // Small delay to ensure cleanup completes
+                            setTimeout(function() {
+                                startNewResize(e);
+                            }, 50);
+                            return;
+                        }
+                        
+                        startNewResize(e);
+                    };
+                    
+                    // Helper function to start a new resize
+                    const startNewResize = function(e) {
                         bringToFront(item.id);
                         const startX = e.clientX;
                         const startY = e.clientY;
@@ -2745,8 +2900,9 @@ class N88_RFQ_Admin {
                             const deltaY = e.clientY - resizeStateValue.startY;
                             let newWidth = resizeStateValue.startWidth + deltaX;
                             let newHeight = resizeStateValue.startHeight + deltaY;
-                            newWidth = Math.max(newWidth, MIN_WIDTH);
-                            newHeight = Math.max(newHeight, MIN_HEIGHT);
+                            // Enforce MIN and MAX dimensions (clamp before setState)
+                            newWidth = Math.max(MIN_WIDTH, Math.min(newWidth, MAX_WIDTH));
+                            newHeight = Math.max(MIN_HEIGHT, Math.min(newHeight, MAX_HEIGHT));
                             setResizeState(function(prev) {
                                 return {
                                     ...prev,
@@ -2756,29 +2912,68 @@ class N88_RFQ_Admin {
                             });
                         };
                         
-                        const handleMouseUp = function() {
+                        const handleResizeEnd = function() {
+                            // Get final dimensions BEFORE clearing state
+                            var finalWidth, finalHeight;
                             setResizeState(function(prev) {
-                                const finalWidth = prev.currentWidth;
-                                const finalHeight = prev.currentHeight;
-                                updateLayout(item.id, { width: finalWidth, height: finalHeight });
-                                if (onLayoutChanged) {
-                                    onLayoutChanged({ id: item.id, x: item.x, y: item.y, width: finalWidth, height: finalHeight, displayMode: item.displayMode });
+                                // Safety check: only process if still resizing
+                                if (!prev.isResizing) return prev;
+                                
+                                // Clamp final dimensions to MIN/MAX (safety check)
+                                finalWidth = prev.currentWidth || prev.startWidth || item.width;
+                                finalHeight = prev.currentHeight || prev.startHeight || item.height;
+                                finalWidth = Math.max(MIN_WIDTH, Math.min(finalWidth, MAX_WIDTH));
+                                finalHeight = Math.max(MIN_HEIGHT, Math.min(finalHeight, MAX_HEIGHT));
+                                
+                                // Update store FIRST (synchronously) before clearing state
+                                try {
+                                    updateLayout(item.id, { width: finalWidth, height: finalHeight });
+                                } catch (error) {
+                                    console.error('BoardItem: Error updating layout', error);
                                 }
+                                
+                                // Clear resize state AFTER store update (reliably set isResizing to false)
+                                // Clear resize state AFTER store update, but keep final dimensions temporarily
+                                // This prevents flicker when component re-renders before store update propagates
                                 return {
                                     isResizing: false,
                                     startX: 0,
                                     startY: 0,
                                     startWidth: 0,
                                     startHeight: 0,
+                                    // Keep final dimensions until store update propagates
+                                    currentWidth: finalWidth,
+                                    currentHeight: finalHeight,
                                 };
                             });
+                            
+                            // Emit callback AFTER state is cleared (async to prevent blocking)
+                            if (finalWidth !== undefined && finalHeight !== undefined) {
+                                setTimeout(function() {
+                                    try {
+                                        if (onLayoutChanged) {
+                                            onLayoutChanged({ id: item.id, x: item.x, y: item.y, width: finalWidth, height: finalHeight, displayMode: item.displayMode });
+                                        }
+                                    } catch (error) {
+                                        console.error('BoardItem: Error in resize end callback', error);
+                                    }
+                                }, 0);
+                            }
                         };
                         
+                        // Safety: Remove any existing listeners first (prevent duplicates on multiple resizes)
+                        document.removeEventListener('mousemove', handleMouseMove);
+                        window.removeEventListener('mouseup', handleResizeEnd);
+                        window.removeEventListener('blur', handleResizeEnd);
+                        
+                        // Attach listeners to window for better capture (mouseup outside viewport, blur events)
                         document.addEventListener('mousemove', handleMouseMove);
-                        document.addEventListener('mouseup', handleMouseUp);
+                        window.addEventListener('mouseup', handleResizeEnd);
+                        window.addEventListener('blur', handleResizeEnd); // Safety: end resize if window loses focus
                         return function() {
                             document.removeEventListener('mousemove', handleMouseMove);
-                            document.removeEventListener('mouseup', handleMouseUp);
+                            window.removeEventListener('mouseup', handleResizeEnd);
+                            window.removeEventListener('blur', handleResizeEnd);
                         };
                     }, [resizeStateValue.isResizing, resizeStateValue.startX, resizeStateValue.startY, resizeStateValue.startWidth, resizeStateValue.startHeight, item.id, item.x, item.y, item.displayMode, updateLayout, onLayoutChanged]);
 
@@ -3024,3 +3219,4 @@ class N88_RFQ_Admin {
         <?php
     }
 }
+
