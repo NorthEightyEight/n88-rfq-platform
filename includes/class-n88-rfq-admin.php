@@ -2501,11 +2501,13 @@ class N88_RFQ_Admin {
             'https://dev.forgemetrix.com/wp-content/uploads/2025/12/WechatIMG518.jpg',
             'https://dev.forgemetrix.com/wp-content/uploads/2025/12/WechatIMG517.jpg',
         );
+        // Image URL for first 4 items
+        $first_four_image = 'https://dev.forgemetrix.com/wp-content/uploads/2025/12/2e1c4e1ad3b84c7a2b2e404ec941e5d5.jpeg';
         $seed_items = array(
-            array( 'id' => 'item-1', 'x' => 50, 'y' => 50, 'z' => 1, 'width' => 200, 'height' => 250, 'displayMode' => 'photo_only', 'imageUrl' => $image_urls[0] ),
-            array( 'id' => 'item-2', 'x' => 300, 'y' => 50, 'z' => 2, 'width' => 200, 'height' => 250, 'displayMode' => 'full', 'imageUrl' => $image_urls[1] ),
-            array( 'id' => 'item-3', 'x' => 550, 'y' => 50, 'z' => 3, 'width' => 200, 'height' => 250, 'displayMode' => 'photo_only', 'imageUrl' => $image_urls[2] ),
-            array( 'id' => 'item-4', 'x' => 800, 'y' => 50, 'z' => 4, 'width' => 200, 'height' => 250, 'displayMode' => 'full', 'imageUrl' => $image_urls[3] ),
+            array( 'id' => 'item-1', 'x' => 50, 'y' => 50, 'z' => 1, 'width' => 200, 'height' => 250, 'displayMode' => 'photo_only', 'imageUrl' => $first_four_image ),
+            array( 'id' => 'item-2', 'x' => 300, 'y' => 50, 'z' => 2, 'width' => 200, 'height' => 250, 'displayMode' => 'full', 'imageUrl' => $first_four_image ),
+            array( 'id' => 'item-3', 'x' => 550, 'y' => 50, 'z' => 3, 'width' => 200, 'height' => 250, 'displayMode' => 'photo_only', 'imageUrl' => $first_four_image ),
+            array( 'id' => 'item-4', 'x' => 800, 'y' => 50, 'z' => 4, 'width' => 200, 'height' => 250, 'displayMode' => 'full', 'imageUrl' => $first_four_image ),
             array( 'id' => 'item-5', 'x' => 1050, 'y' => 50, 'z' => 5, 'width' => 200, 'height' => 250, 'displayMode' => 'photo_only', 'imageUrl' => $image_urls[0] ),
             array( 'id' => 'item-6', 'x' => 50, 'y' => 350, 'z' => 6, 'width' => 200, 'height' => 250, 'displayMode' => 'full', 'imageUrl' => $image_urls[1] ),
             array( 'id' => 'item-7', 'x' => 300, 'y' => 350, 'z' => 7, 'width' => 200, 'height' => 250, 'displayMode' => 'photo_only', 'imageUrl' => $image_urls[2] ),
@@ -2543,125 +2545,8 @@ class N88_RFQ_Admin {
         // Note: JSX files are not enqueued - we use inline React.createElement code instead
         // This avoids ES6 module import errors in WordPress
         
-        // Global stuck-state recovery function (can be called from console)
-        // Usage: window.N88StudioOS.recoverStuckResize()
-        wp_add_inline_script('n88-board-store', '
-            (function() {
-                if (typeof window.N88StudioOS === "undefined") {
-                    window.N88StudioOS = {};
-                }
-                
-                // Global recovery function
-                window.N88StudioOS.recoverStuckResize = function() {
-                    console.warn("N88StudioOS: Global stuck-state recovery triggered");
-                    // Force reset all cursor styles
-                    if (document.body) {
-                        document.body.style.cursor = "";
-                        document.body.style.pointerEvents = "";
-                    }
-                    // Force remove all resize-related event listeners
-                    const events = ["mousemove", "mouseup", "mouseleave", "blur", "contextmenu", "pointerup", "pointerleave", "pointerout", "mouseout", "focusout"];
-                    events.forEach(function(eventName) {
-                        const dummy = function() {};
-                        document.removeEventListener(eventName, dummy, true);
-                        document.removeEventListener(eventName, dummy, false);
-                        window.removeEventListener(eventName, dummy, true);
-                        window.removeEventListener(eventName, dummy, false);
-                    });
-                    console.log("N88StudioOS: Recovery complete - try interacting with items now");
-                };
-                
-                // Global watchdog: Monitor for stuck resize states every 2 seconds (less aggressive to prevent performance issues)
-                // This runs independently and can recover from any stuck state
-                // CRITICAL: After many resizes, listeners can accumulate - this cleans them up
-                var watchdogInterval = setInterval(function() {
-                    try {
-                        // Check global active resizes tracker
-                        if (window.N88StudioOS && window.N88StudioOS.activeResizes && window.N88StudioOS.activeResizes.size > 0) {
-                            var now = Date.now();
-                            var lastMouseMove = window._lastMouseMoveTime || 0;
-                            var timeSinceLastMove = now - lastMouseMove;
-                            
-                            // If mouse has not moved for 2 seconds but resize is still active, force cleanup
-                            if (timeSinceLastMove > 2000) {
-                                console.warn("N88StudioOS: Watchdog detected stuck resize (no mouse activity for 2s) - auto-recovering");
-                                window.N88StudioOS.recoverStuckResize();
-                                // Clear all active resizes
-                                window.N88StudioOS.activeResizes.clear();
-                            }
-                        }
-                        
-                        // Also check cursor state
-                        if (document.body && document.body.style.cursor === "nwse-resize") {
-                            var lastMouseMove = window._lastMouseMoveTime || 0;
-                            var now = Date.now();
-                            if (now - lastMouseMove > 2000) {
-                                console.warn("N88StudioOS: Watchdog detected stuck resize (cursor stuck) - auto-recovering");
-                                window.N88StudioOS.recoverStuckResize();
-                                if (window.N88StudioOS && window.N88StudioOS.activeResizes) {
-                                    window.N88StudioOS.activeResizes.clear();
-                                }
-                            }
-                        }
-                    } catch (e) {
-                        // Silently fail - watchdog should never break
-                        console.warn("N88StudioOS: Watchdog error (non-critical):", e);
-                    }
-                }, 2000); // Check every 2 seconds (less aggressive to prevent performance issues)
-                
-                // Store interval ID for cleanup if needed
-                window.N88StudioOS.watchdogInterval = watchdogInterval;
-                
-                // Track mouse movement globally for watchdog
-                document.addEventListener("mousemove", function() {
-                    window._lastMouseMoveTime = Date.now();
-                }, { passive: true });
-                
-                // Track mouseup globally (helps detect when resize should end)
-                // CRITICAL: This catches cases where resize end handler does not fire
-                document.addEventListener("mouseup", function(e) {
-                    window._lastMouseUpTime = Date.now();
-                    
-                    // Immediate cleanup check (do not wait)
-                    if (document.body && document.body.style.cursor === "nwse-resize") {
-                        console.warn("N88StudioOS: Mouseup detected with resize cursor - forcing immediate cleanup");
-                        window.N88StudioOS.recoverStuckResize();
-                        if (window.N88StudioOS && window.N88StudioOS.activeResizes) {
-                            window.N88StudioOS.activeResizes.clear();
-                        }
-                    }
-                    
-                    // Also check after 100ms (faster than before)
-                    setTimeout(function() {
-                        if (document.body && document.body.style.cursor === "nwse-resize") {
-                            console.warn("N88StudioOS: Mouseup detected but cursor still resize after 100ms - forcing cleanup");
-                            window.N88StudioOS.recoverStuckResize();
-                            if (window.N88StudioOS && window.N88StudioOS.activeResizes) {
-                                window.N88StudioOS.activeResizes.clear();
-                            }
-                        }
-                    }, 100);
-                }, { passive: true, capture: true }); // Use capture to catch early
-                
-                // CRITICAL: Global click handler to force end stuck resize/drag
-                // This catches clicks anywhere on the page during resize/drag
-                document.addEventListener("click", function(e) {
-                    // Only act if resize cursor is stuck or active resizes exist
-                    if (document.body && document.body.style.cursor === "nwse-resize") {
-                        console.warn("N88StudioOS: Click detected with resize cursor - forcing cleanup");
-                        window.N88StudioOS.recoverStuckResize();
-                        if (window.N88StudioOS && window.N88StudioOS.activeResizes) {
-                            window.N88StudioOS.activeResizes.clear();
-                        }
-                    } else if (window.N88StudioOS && window.N88StudioOS.activeResizes && window.N88StudioOS.activeResizes.size > 0) {
-                        // If there are active resizes but cursor is not stuck, still force cleanup
-                        console.warn("N88StudioOS: Click detected with active resizes - forcing cleanup");
-                        window.N88StudioOS.recoverStuckResize();
-                        window.N88StudioOS.activeResizes.clear();
-                    }
-                }, { passive: true, capture: true }); // Use capture to catch early
-            })();
-        ', 'after');
+        // Note: Resize-related global watchdog code has been removed in 1.3.6
+        // Size presets (S/D/L/XL) replace free-form resize, eliminating stuck-state issues
         
         // Localize script for AJAX URL and nonce
         wp_localize_script( 'n88-debounced-save', 'n88BoardNonce', wp_create_nonce( 'n88_rfq_nonce' ) );
@@ -2791,46 +2676,84 @@ class N88_RFQ_Admin {
                 const store = useBoardStore.getState();
                 store.setItems(seedItems);
 
-                // BoardItem Component
+                // Locked size presets (DO NOT CHANGE)
+                const CARD_SIZES = {
+                    S: { w: 160, h: 200 },
+                    D: { w: 200, h: 250 }, // CURRENT DEFAULT — LOCKED
+                    L: { w: 280, h: 350 },
+                    XL: { w: 360, h: 450 },
+                };
+
+                // BoardItem Component (Size Presets Only - 1.3.6)
                 const BoardItem = ({ item, onLayoutChanged }) => {
                     const bringToFront = useBoardStore((state) => state.bringToFront);
                     const updateLayout = useBoardStore((state) => state.updateLayout);
                     
+                    // Local state to track if card is expanded (showing details)
+                    const [isExpanded, setIsExpanded] = React.useState(item.displayMode === 'full');
+                    
                     const x = useMotionValue(item.x);
                     const y = useMotionValue(item.y);
-                    
-                    // Local state for resize (live preview during resize)
-                    const resizeState = React.useState({
-                        isResizing: false,
-                        startX: 0,
-                        startY: 0,
-                        startWidth: 0,
-                        startHeight: 0,
-                    });
-                    const setResizeState = resizeState[1];
-                    const resizeStateValue = resizeState[0];
-                    
-                    // Minimum dimensions
-                    const MIN_WIDTH = 100;
-                    const MIN_HEIGHT = 100;
-                    
-                    // Maximum dimensions (80% of viewport)
-                    const MAX_WIDTH = Math.floor(0.8 * (typeof window !== 'undefined' ? window.innerWidth : 1920));
-                    const MAX_HEIGHT = Math.floor(0.8 * (typeof window !== 'undefined' ? window.innerHeight : 1080));
-                    
-                    // Current dimensions (use resize preview if resizing, otherwise use store)
-                    // If resize just ended, use the final dimensions from resize state until store updates
-                    const currentWidth = resizeStateValue.isResizing 
-                        ? resizeStateValue.currentWidth 
-                        : (resizeStateValue.currentWidth !== undefined ? resizeStateValue.currentWidth : item.width);
-                    const currentHeight = resizeStateValue.isResizing 
-                        ? resizeStateValue.currentHeight 
-                        : (resizeStateValue.currentHeight !== undefined ? resizeStateValue.currentHeight : item.height);
 
                     React.useEffect(() => {
                         x.set(item.x);
                         y.set(item.y);
                     }, [item.x, item.y]);
+
+                    // Sync expanded state with displayMode
+                    React.useEffect(() => {
+                        setIsExpanded(item.displayMode === 'full');
+                    }, [item.displayMode]);
+
+                    // Determine current size preset based on item dimensions
+                    const getCurrentSize = function() {
+                        const width = item.width;
+                        const height = item.height;
+                        // Find matching preset (with small tolerance for floating point)
+                        for (const size in CARD_SIZES) {
+                            const dims = CARD_SIZES[size];
+                            if (Math.abs(width - dims.w) < 1 && Math.abs(height - dims.h) < 1) {
+                                return size;
+                            }
+                        }
+                        // Default to D if no match found
+                        return 'D';
+                    };
+
+                    const currentSize = getCurrentSize();
+                    
+                    // Calculate z-index: XL and L items should appear above others
+                    // Use item.z as base, but add extra boost for XL and L sizes
+                    const calculatedZIndex = (currentSize === 'XL' || currentSize === 'L') ? item.z + 1000 : item.z;
+
+                    // Handle size preset selection
+                    const handleSizeChange = function(size, e) {
+                        if (e) {
+                            e.stopPropagation();
+                            e.preventDefault();
+                        }
+                        
+                        const newSize = CARD_SIZES[size];
+                        if (!newSize) return;
+
+                        // Update layout with exact preset dimensions
+                        updateLayout(item.id, {
+                            width: newSize.w,
+                            height: newSize.h,
+                        });
+
+                        // Trigger layout changed callback (triggers debounced save)
+                        if (onLayoutChanged) {
+                            onLayoutChanged({
+                                id: item.id,
+                                x: item.x,
+                                y: item.y,
+                                width: newSize.w,
+                                height: newSize.h,
+                                displayMode: item.displayMode,
+                            });
+                        }
+                    };
 
                     const handleDragStart = () => {
                         bringToFront(item.id);
@@ -2841,146 +2764,14 @@ class N88_RFQ_Admin {
                         const newY = y.get();
                         updateLayout(item.id, { x: newX, y: newY });
                         if (onLayoutChanged) {
-                            onLayoutChanged({ id: item.id, x: newX, y: newY, width: currentWidth, height: currentHeight, displayMode: item.displayMode });
+                            onLayoutChanged({ id: item.id, x: newX, y: newY, width: item.width, height: item.height, displayMode: item.displayMode });
                         }
                     };
-                    
-                    // Resize start handler
-                    const handleResizeStart = function(e) {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        
-                        // Safety: Force end any existing resize first (prevent stuck state on multiple resizes)
-                        if (resizeStateValue.isResizing) {
-                            console.warn('BoardItem: Previous resize still active - forcing end before new resize');
-                            setResizeState(function(prev) {
-                                return {
-                                    ...prev,
-                                    isResizing: false,
-                                    startX: 0,
-                                    startY: 0,
-                                    startWidth: 0,
-                                    startHeight: 0,
-                                    currentWidth: undefined,
-                                    currentHeight: undefined,
-                                };
-                            });
-                            // Small delay to ensure cleanup completes
-                            setTimeout(function() {
-                                startNewResize(e);
-                            }, 50);
-                            return;
-                        }
-                        
-                        startNewResize(e);
-                    };
-                    
-                    // Helper function to start a new resize
-                    const startNewResize = function(e) {
-                        bringToFront(item.id);
-                        const startX = e.clientX;
-                        const startY = e.clientY;
-                        setResizeState({
-                            isResizing: true,
-                            startX: startX,
-                            startY: startY,
-                            startWidth: item.width,
-                            startHeight: item.height,
-                            currentWidth: item.width,
-                            currentHeight: item.height,
-                        });
-                    };
-                    
-                    // Resize move handler (live preview only - NO saves)
-                    React.useEffect(function() {
-                        if (!resizeStateValue.isResizing) return;
-                        
-                        const handleMouseMove = function(e) {
-                            const deltaX = e.clientX - resizeStateValue.startX;
-                            const deltaY = e.clientY - resizeStateValue.startY;
-                            let newWidth = resizeStateValue.startWidth + deltaX;
-                            let newHeight = resizeStateValue.startHeight + deltaY;
-                            // Enforce MIN and MAX dimensions (clamp before setState)
-                            newWidth = Math.max(MIN_WIDTH, Math.min(newWidth, MAX_WIDTH));
-                            newHeight = Math.max(MIN_HEIGHT, Math.min(newHeight, MAX_HEIGHT));
-                            setResizeState(function(prev) {
-                                return {
-                                    ...prev,
-                                    currentWidth: newWidth,
-                                    currentHeight: newHeight,
-                                };
-                            });
-                        };
-                        
-                        const handleResizeEnd = function() {
-                            // Get final dimensions BEFORE clearing state
-                            var finalWidth, finalHeight;
-                            setResizeState(function(prev) {
-                                // Safety check: only process if still resizing
-                                if (!prev.isResizing) return prev;
-                                
-                                // Clamp final dimensions to MIN/MAX (safety check)
-                                finalWidth = prev.currentWidth || prev.startWidth || item.width;
-                                finalHeight = prev.currentHeight || prev.startHeight || item.height;
-                                finalWidth = Math.max(MIN_WIDTH, Math.min(finalWidth, MAX_WIDTH));
-                                finalHeight = Math.max(MIN_HEIGHT, Math.min(finalHeight, MAX_HEIGHT));
-                                
-                                // Update store FIRST (synchronously) before clearing state
-                                try {
-                                    updateLayout(item.id, { width: finalWidth, height: finalHeight });
-                                } catch (error) {
-                                    console.error('BoardItem: Error updating layout', error);
-                                }
-                                
-                                // Clear resize state AFTER store update (reliably set isResizing to false)
-                                // Clear resize state AFTER store update, but keep final dimensions temporarily
-                                // This prevents flicker when component re-renders before store update propagates
-                                return {
-                                    isResizing: false,
-                                    startX: 0,
-                                    startY: 0,
-                                    startWidth: 0,
-                                    startHeight: 0,
-                                    // Keep final dimensions until store update propagates
-                                    currentWidth: finalWidth,
-                                    currentHeight: finalHeight,
-                                };
-                            });
-                            
-                            // Emit callback AFTER state is cleared (async to prevent blocking)
-                            if (finalWidth !== undefined && finalHeight !== undefined) {
-                                setTimeout(function() {
-                                    try {
-                                        if (onLayoutChanged) {
-                                            onLayoutChanged({ id: item.id, x: item.x, y: item.y, width: finalWidth, height: finalHeight, displayMode: item.displayMode });
-                                        }
-                                    } catch (error) {
-                                        console.error('BoardItem: Error in resize end callback', error);
-                                    }
-                                }, 0);
-                            }
-                        };
-                        
-                        // Safety: Remove any existing listeners first (prevent duplicates on multiple resizes)
-                        document.removeEventListener('mousemove', handleMouseMove);
-                        window.removeEventListener('mouseup', handleResizeEnd);
-                        window.removeEventListener('blur', handleResizeEnd);
-                        
-                        // Attach listeners to window for better capture (mouseup outside viewport, blur events)
-                        document.addEventListener('mousemove', handleMouseMove);
-                        window.addEventListener('mouseup', handleResizeEnd);
-                        window.addEventListener('blur', handleResizeEnd); // Safety: end resize if window loses focus
-                        return function() {
-                            document.removeEventListener('mousemove', handleMouseMove);
-                            window.removeEventListener('mouseup', handleResizeEnd);
-                            window.removeEventListener('blur', handleResizeEnd);
-                        };
-                    }, [resizeStateValue.isResizing, resizeStateValue.startX, resizeStateValue.startY, resizeStateValue.startWidth, resizeStateValue.startHeight, item.id, item.x, item.y, item.displayMode, updateLayout, onLayoutChanged]);
 
                     return React.createElement(motion.div, {
                         layoutId: 'board-item-' + item.id,
-                        style: { position: 'absolute', x: x, y: y, width: currentWidth, height: currentHeight, zIndex: item.z, cursor: resizeStateValue.isResizing ? 'nwse-resize' : 'grab' },
-                        drag: !resizeStateValue.isResizing,
+                        style: { position: 'absolute', x: x, y: y, width: item.width, height: item.height, zIndex: calculatedZIndex, cursor: 'grab' },
+                        drag: true,
                         dragMomentum: false,
                         onDragStart: handleDragStart,
                         onDragEnd: handleDragEnd,
@@ -2994,8 +2785,9 @@ class N88_RFQ_Admin {
                             height: item.displayMode === 'photo_only' ? '100%' : '60%', 
                             backgroundColor: '#e0e0e0', 
                             backgroundImage: item.imageUrl ? 'url(' + item.imageUrl + ')' : 'none',
-                            backgroundSize: 'cover',
+                            backgroundSize: 'contain',
                             backgroundPosition: 'center',
+                            backgroundRepeat: 'no-repeat',
                             display: 'flex', 
                             alignItems: 'center', 
                             justifyContent: 'center', 
@@ -3004,15 +2796,17 @@ class N88_RFQ_Admin {
                             position: 'relative'
                         },
                     }, 
-                    // Toggle button for photo_only mode (overlay on image)
-                    item.displayMode === 'photo_only' && React.createElement('button', {
+                    // Card Details / Show Full Image button - always visible on top right
+                    React.createElement('button', {
                         onClick: function(e) { 
                             e.stopPropagation(); 
-                            updateLayout(item.id, { displayMode: 'full' }); 
+                            const newMode = item.displayMode === 'photo_only' ? 'full' : 'photo_only';
+                            updateLayout(item.id, { displayMode: newMode }); 
+                            setIsExpanded(newMode === 'full');
                             // Trigger save after animation completes (350ms)
                             setTimeout(function() {
                                 if (onLayoutChanged) {
-                                    onLayoutChanged({ id: item.id, x: item.x, y: item.y, width: currentWidth, height: currentHeight, displayMode: 'full' });
+                                    onLayoutChanged({ id: item.id, x: item.x, y: item.y, width: item.width, height: item.height, displayMode: newMode });
                                 }
                             }, 350);
                         },
@@ -3030,7 +2824,7 @@ class N88_RFQ_Admin {
                             zIndex: 10,
                             boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
                         },
-                    }, 'Show Full'),
+                    }, isExpanded ? 'Show Full Image' : 'Card Details'),
                     // Item ID text overlay (only show if no image or for debugging)
                     !item.imageUrl && React.createElement('div', { style: { textAlign: 'center', position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', backgroundColor: 'rgba(255,255,255,0.8)', padding: '4px 8px', borderRadius: '4px' } }, 'Item ' + item.id)
                     ), 
@@ -3042,44 +2836,49 @@ class N88_RFQ_Admin {
                         exit: { opacity: 0, height: 0 },
                         transition: { duration: 0.3 },
                         style: { padding: '12px', backgroundColor: '#ffffff' },
-                    }, React.createElement('div', { style: { fontSize: '14px', fontWeight: 'bold' } }, 'Item ' + item.id), React.createElement('div', { style: { fontSize: '12px', color: '#666', marginTop: '4px' } }, 'Position: ' + Math.round(item.x) + ', ' + Math.round(item.y)), React.createElement('button', {
-                        onClick: function(e) { 
-                            e.stopPropagation(); 
-                            updateLayout(item.id, { displayMode: 'photo_only' }); 
-                            // Trigger save after animation completes (350ms)
-                            setTimeout(function() {
-                                if (onLayoutChanged) {
-                                    onLayoutChanged({ id: item.id, x: item.x, y: item.y, width: currentWidth, height: currentHeight, displayMode: 'photo_only' });
-                                }
-                            }, 350);
-                        },
-                        style: { marginTop: '8px', padding: '4px 8px', fontSize: '11px', cursor: 'pointer', backgroundColor: '#0073aa', color: '#fff', border: 'none', borderRadius: '3px' },
-                    }, 'Toggle: Photo Only'))),
-                    // Resize handle (SE corner)
-                    React.createElement('div', {
-                        onMouseDown: handleResizeStart,
-                        style: {
-                            position: 'absolute',
-                            bottom: 0,
-                            right: 0,
-                            width: '16px',
-                            height: '16px',
-                            cursor: 'nwse-resize',
-                            backgroundColor: 'rgba(0, 0, 0, 0.1)',
-                            borderTopLeftRadius: '8px',
-                            zIndex: 20,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                        },
-                    }, React.createElement('div', {
-                        style: {
-                            width: '8px',
-                            height: '8px',
-                            borderRight: '2px solid rgba(0, 0, 0, 0.3)',
-                            borderBottom: '2px solid rgba(0, 0, 0, 0.3)',
-                        },
-                    }))));
+                    }, 
+                        React.createElement('div', { style: { fontSize: '14px', fontWeight: 'bold' } }, 'Item ' + item.id), 
+                        React.createElement('div', { style: { fontSize: '12px', color: '#666', marginTop: '4px' } }, 'Position: ' + Math.round(item.x) + ', ' + Math.round(item.y)), 
+                        // Size Preset Controls (S / D / L / XL) - in detail area
+                        React.createElement('div', {
+                            style: {
+                                display: 'flex',
+                                gap: '4px',
+                                marginTop: '12px',
+                                pointerEvents: 'auto',
+                            },
+                        }, ['S', 'D', 'L', 'XL'].map(function(size) {
+                            return React.createElement('button', {
+                                key: size,
+                                onClick: function(e) {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                    handleSizeChange(size, e);
+                                },
+                                style: {
+                                    padding: '4px 8px',
+                                    fontSize: '11px',
+                                    fontWeight: currentSize === size ? 'bold' : 'normal',
+                                    cursor: 'pointer',
+                                    backgroundColor: currentSize === size ? '#0073aa' : '#f0f0f0',
+                                    color: currentSize === size ? '#fff' : '#333',
+                                    border: '1px solid ' + (currentSize === size ? '#0073aa' : '#ccc'),
+                                    borderRadius: '3px',
+                                    minWidth: '28px',
+                                    transition: 'all 0.2s',
+                                },
+                                onMouseEnter: function(e) {
+                                    if (currentSize !== size) {
+                                        e.target.style.backgroundColor = '#e0e0e0';
+                                    }
+                                },
+                                onMouseLeave: function(e) {
+                                    if (currentSize !== size) {
+                                        e.target.style.backgroundColor = '#f0f0f0';
+                                    }
+                                },
+                            }, size);
+                        })))))) // closes: size div, metadata motion.div, AnimatePresence, inner div (main container), outer motion.div
                 };
 
                 // UnsyncedToast Component
