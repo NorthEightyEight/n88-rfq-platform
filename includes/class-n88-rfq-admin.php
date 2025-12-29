@@ -407,15 +407,22 @@ class N88_RFQ_Admin {
 
     /**
      * Check if current user has access to plugin pages
-     * Allows both administrators and designers
+     * Allows administrators, system operators, and designers
      */
     private function check_plugin_access() {
         if ( current_user_can( 'manage_options' ) ) {
             return true;
         }
         $current_user = wp_get_current_user();
-        if ( $current_user && ( in_array( 'n88_designer', $current_user->roles, true ) || in_array( 'designer', $current_user->roles, true ) ) ) {
+        if ( $current_user ) {
+            // Allow designers
+            if ( in_array( 'n88_designer', $current_user->roles, true ) || in_array( 'designer', $current_user->roles, true ) ) {
             return true;
+            }
+            // Allow system operators
+            if ( in_array( 'n88_system_operator', $current_user->roles, true ) ) {
+                return true;
+            }
         }
         return false;
     }
@@ -3419,7 +3426,44 @@ class N88_RFQ_Admin {
         ) );
         ?>
         <div class="wrap">
-            <h1><?php echo $is_real_board ? 'Real Board - ' . esc_html( $board_name ) : 'Board Demo (Milestone 1.3.4a)'; ?></h1>
+            <!-- Top Bar -->
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 15px 0; border-bottom: 1px solid #ddd; margin-bottom: 20px;">
+                <div style="font-size: 16px; font-weight: 500; color: #333;">
+                    NorthEightyEight / Workspace
+                </div>
+                <div style="font-size: 14px; color: #666; cursor: pointer;">
+                    Profile ▼
+                </div>
+            </div>
+            
+            <!-- Tabs -->
+            <div style="margin-bottom: 20px;">
+                <span style="margin-right: 10px; padding: 8px 15px; background-color: #0073aa; color: #fff; border-radius: 4px; font-size: 14px; cursor: pointer;">
+                    My Board
+                </span>
+                <span style="margin-right: 10px; padding: 8px 15px; background-color: #f0f0f0; color: #666; border-radius: 4px; font-size: 14px; cursor: pointer;">
+                    Firm Board (View-Only)
+                </span>
+            </div>
+            
+            <!-- Board Mode and Search -->
+            <div style="display: flex; align-items: center; gap: 30px; margin-bottom: 20px; padding: 15px; background-color: #f9f9f9; border-radius: 4px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 14px; color: #666;">Board Mode:</span>
+                    <label style="display: flex; align-items: center; gap: 5px; cursor: pointer; font-size: 14px;">
+                        <input type="radio" name="board_mode" value="furniture" checked style="cursor: pointer;">
+                        <span>Furniture</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 5px; cursor: pointer; font-size: 14px; margin-left: 15px;">
+                        <input type="radio" name="board_mode" value="global_sourcing" style="cursor: pointer;">
+                        <span>Global Sourcing</span>
+                    </label>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 14px; color: #666;">Search:</span>
+                    <input type="text" placeholder="Search items..." style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; min-width: 250px;">
+                </div>
+            </div>
             
             <?php if ( isset( $_GET['item_added'] ) && $_GET['item_added'] == '1' ) : ?>
                 <div id="n88-item-added-toast" class="notice notice-success is-dismissible" style="margin: 20px 0; position: relative;">
@@ -3446,23 +3490,14 @@ class N88_RFQ_Admin {
                 </script>
             <?php endif; ?>
             
-            <?php if ( $is_real_board && empty( $items ) ) : ?>
-                <!-- <div class="notice notice-info" style="margin: 20px 0;">
-                    <p><strong>No items found on this board yet.</strong> Items may still be loading. If items were just created, please wait a moment and refresh the page.</p>
-                </div> -->
-            <?php endif; ?>
             <?php if ( $is_real_board ) : ?>
-                <p style="display: flex; align-items: center; gap: 15px;">
-                    <span><strong>Board ID:</strong> <?php echo esc_html( $board_id ); ?> | <strong>Items:</strong> <span data-item-count><?php echo count( $items ); ?></span></span>
+                <div style="margin-bottom: 20px;">
                     <a href="<?php echo esc_url( admin_url( 'admin.php?page=n88-rfq-items-boards-test' ) ); ?>" 
                        class="button" 
-                       style="background-color: #000; color: #fff; padding: 2px 10px; text-decoration: none; border: none; cursor: pointer;">
-                        Add Item
+                       style="background-color: #000; color: #fff; padding: 8px 16px; text-decoration: none; border: none; cursor: pointer; border-radius: 4px; font-size: 14px; display: inline-block;">
+                        + Add Item
                     </a>
-                </p>
-            <?php else : ?>
-                <p><strong>Testing Only:</strong> This page demonstrates board interactions without API calls.</p>
-                <p><strong>Tip:</strong> Add <code>&board_id=3</code> to the URL to load a real board.</p>
+                </div>
             <?php endif; ?>
             <div id="n88-board-demo-root"></div>
             <div id="n88-board-demo-debug" style="position: fixed; bottom: 10px; right: 10px; background: #fff; padding: 10px; border: 1px solid #ccc; z-index: 9999; font-size: 12px; max-width: 300px;">
@@ -3695,11 +3730,17 @@ class N88_RFQ_Admin {
                 
                 // User ID for welcome modal (get from WordPress)
                 const currentUserId = <?php echo get_current_user_id(); ?>;
+                const currentUserName = <?php 
+                    $current_user = wp_get_current_user();
+                    echo wp_json_encode( $current_user->display_name ? $current_user->display_name : 'User' );
+                ?>;
                 
                 // Expose userId to window for debugging
                 window.currentUserId = currentUserId;
                 if (window.N88StudioOS) {
                     window.N88StudioOS.currentUserId = currentUserId;
+                    window.N88StudioOS.currentUser = window.N88StudioOS.currentUser || {};
+                    window.N88StudioOS.currentUser.display_name = currentUserName;
                 }
                 
                 // Concierge data (placeholder for now - can be replaced with actual data source)
@@ -4377,6 +4418,13 @@ class N88_RFQ_Admin {
                     var onSave = props.onSave;
                     var boardId = props.boardId;
                     
+                    // Get current user name
+                    var currentUserName = (window.N88StudioOS && window.N88StudioOS.currentUser && window.N88StudioOS.currentUser.display_name) || 'User';
+                    
+                    // Get item ID and status
+                    var itemId = item.id || item.item_id || '';
+                    var itemStatus = item.status || 'Draft';
+                    
                     // Form state
                     var _categoryState = React.useState(item.item_type || item.category || '');
                     var category = _categoryState[0];
@@ -4385,6 +4433,10 @@ class N88_RFQ_Admin {
                     var _descriptionState = React.useState(item.description || '');
                     var description = _descriptionState[0];
                     var setDescription = _descriptionState[1];
+                    
+                    var _quantityState = React.useState(item.quantity ? String(item.quantity) : '');
+                    var quantity = _quantityState[0];
+                    var setQuantity = _quantityState[1];
                     
                     var _widthState = React.useState(item.dims && item.dims.w ? String(item.dims.w) : '');
                     var width = _widthState[0];
@@ -4409,6 +4461,11 @@ class N88_RFQ_Admin {
                     var _isSavingState = React.useState(false);
                     var isSaving = _isSavingState[0];
                     var setIsSaving = _isSavingState[1];
+                    
+                    // Phase 2.1.1: Local state to track if price was requested (frontend only, no persistence)
+                    var _priceState = React.useState(false);
+                    var priceRequested = _priceState[0];
+                    var setPriceRequested = _priceState[1];
                     
                     // Computed values (read-only) - initialize from saved item data
                     var _computedState = React.useState({
@@ -4476,6 +4533,7 @@ class N88_RFQ_Admin {
                             var payload = {
                                 category: category,
                                 description: description,
+                                quantity: quantity ? parseInt(quantity) : null,
                                 dims: {
                                     w: width ? parseFloat(width) : null,
                                     d: depth ? parseFloat(depth) : null,
@@ -4604,7 +4662,7 @@ class N88_RFQ_Admin {
                             },
                                 React.createElement('h2', {
                                     style: { margin: 0, fontSize: '20px', fontWeight: '600' }
-                                }, 'Item Detail'),
+                                }, 'Item Detail (' + currentUserName + ')'),
                                 React.createElement('button', {
                                     onClick: onClose,
                                     style: {
@@ -4615,6 +4673,9 @@ class N88_RFQ_Admin {
                                         padding: '0',
                                         width: '30px',
                                         height: '30px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
                                     }
                                 }, '×')
                             ),
@@ -4623,14 +4684,304 @@ class N88_RFQ_Admin {
                                 style: {
                                     flex: 1,
                                     overflowY: 'auto',
-                                    padding: '20px',
+                                    padding: 0,
                                 }
                             },
-                                // Image Preview Box (at top - shows uploaded material images or placeholder)
-                                React.createElement('div', { style: { marginBottom: '24px' } },
+                                // Item ID and Status
+                                React.createElement('div', {
+                                    style: {
+                                    padding: '20px',
+                                        borderBottom: '1px solid #e0e0e0',
+                                        backgroundColor: '#f9f9f9',
+                                    }
+                                },
+                                    React.createElement('div', { style: { marginBottom: '8px', fontSize: '16px', fontWeight: '600' } }, 'Item #' + itemId),
+                                    React.createElement('div', { style: { fontSize: '14px', color: '#666' } }, 'Status: ' + itemStatus)
+                                ),
+                                // Content Sections
+                                React.createElement('div', {
+                                    style: {
+                                        padding: '20px',
+                                    }
+                                },
+                                // SECTION: Item Facts
+                                React.createElement('div', { style: { marginBottom: '32px' } },
+                                    React.createElement('h3', {
+                                        style: {
+                                            fontSize: '16px',
+                                            fontWeight: '600',
+                                            marginBottom: '16px',
+                                            textTransform: 'uppercase',
+                                            color: '#333',
+                                            borderBottom: '2px solid #e0e0e0',
+                                            paddingBottom: '8px'
+                                        }
+                                    }, 'SECTION: Item Facts'),
+                                    // Category
+                                    React.createElement('div', { style: { marginBottom: '20px' } },
                                     React.createElement('label', {
-                                        style: { display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '8px', textTransform: 'uppercase', color: '#666' }
-                                    }, 'Materials / Inspiration'),
+                                            style: { display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '8px', color: '#666' }
+                                        }, 'Category'),
+                                        React.createElement('select', {
+                                            value: category,
+                                            onChange: function(e) { setCategory(e.target.value); },
+                                            style: {
+                                                width: '100%',
+                                                padding: '10px',
+                                                border: '1px solid #ddd',
+                                                borderRadius: '4px',
+                                                fontSize: '14px',
+                                            }
+                                        },
+                                            React.createElement('option', { value: '' }, 'Select Category'),
+                                            React.createElement('option', { value: 'furniture' }, 'Furniture'),
+                                            React.createElement('option', { value: 'lighting' }, 'Lighting'),
+                                            React.createElement('option', { value: 'accessory' }, 'Accessory'),
+                                            React.createElement('option', { value: 'art' }, 'Art'),
+                                            React.createElement('option', { value: 'other' }, 'Other')
+                                        )
+                                    ),
+                                    // Description
+                                    React.createElement('div', { style: { marginBottom: '20px' } },
+                                        React.createElement('label', {
+                                            style: { display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '8px', color: '#666' }
+                                        }, 'Description'),
+                                        React.createElement('textarea', {
+                                            value: description,
+                                            onChange: function(e) { setDescription(e.target.value); },
+                                            placeholder: 'Lobby seating for reception area',
+                                            rows: 4,
+                                            style: {
+                                                width: '100%',
+                                                padding: '10px',
+                                                border: '1px solid #ddd',
+                                                borderRadius: '4px',
+                                                fontSize: '14px',
+                                                fontFamily: 'inherit',
+                                                resize: 'vertical',
+                                            }
+                                        })
+                                    ),
+                                    // Quantity
+                                    React.createElement('div', { style: { marginBottom: '20px' } },
+                                        React.createElement('label', {
+                                            style: { display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '8px', color: '#666' }
+                                        }, 'Quantity'),
+                                        React.createElement('input', {
+                                            type: 'number',
+                                            value: quantity,
+                                            onChange: function(e) { setQuantity(e.target.value); },
+                                            placeholder: 'Enter quantity',
+                                            min: '1',
+                                            style: {
+                                                width: '100%',
+                                                padding: '10px',
+                                                border: '1px solid #ddd',
+                                                borderRadius: '4px',
+                                                fontSize: '14px',
+                                            }
+                                        })
+                                    ),
+                                    // Dimensions
+                                    React.createElement('div', { style: { marginBottom: '20px' } },
+                                        React.createElement('label', {
+                                            style: { display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '8px', color: '#666' }
+                                        }, 'Dimensions'),
+                                        React.createElement('div', {
+                                            style: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '10px', alignItems: 'end' }
+                                        },
+                                            React.createElement('div', null,
+                                                React.createElement('label', { style: { display: 'block', fontSize: '12px', marginBottom: '4px', color: '#999' } }, 'W'),
+                                                React.createElement('input', {
+                                                    type: 'number',
+                                                    value: width,
+                                                    onChange: function(e) { setWidth(e.target.value); },
+                                                    placeholder: 'Width',
+                                                    style: {
+                                                        width: '100%',
+                                                        padding: '10px',
+                                                        border: '1px solid #ddd',
+                                                        borderRadius: '4px',
+                                                        fontSize: '14px',
+                                                    }
+                                                })
+                                            ),
+                                            React.createElement('div', null,
+                                                React.createElement('label', { style: { display: 'block', fontSize: '12px', marginBottom: '4px', color: '#999' } }, 'D'),
+                                                React.createElement('input', {
+                                                    type: 'number',
+                                                    value: depth,
+                                                    onChange: function(e) { setDepth(e.target.value); },
+                                                    placeholder: 'Depth',
+                                                    style: {
+                                                        width: '100%',
+                                                        padding: '10px',
+                                                        border: '1px solid #ddd',
+                                                        borderRadius: '4px',
+                                                        fontSize: '14px',
+                                                    }
+                                                })
+                                            ),
+                                            React.createElement('div', null,
+                                                React.createElement('label', { style: { display: 'block', fontSize: '12px', marginBottom: '4px', color: '#999' } }, 'H'),
+                                                React.createElement('input', {
+                                                    type: 'number',
+                                                    value: height,
+                                                    onChange: function(e) { setHeight(e.target.value); },
+                                                    placeholder: 'Height',
+                                                    style: {
+                                                        width: '100%',
+                                                        padding: '10px',
+                                                        border: '1px solid #ddd',
+                                                        borderRadius: '4px',
+                                                        fontSize: '14px',
+                                                    }
+                                                })
+                                            ),
+                                            React.createElement('div', null,
+                                                React.createElement('label', { style: { display: 'block', fontSize: '12px', marginBottom: '4px', color: '#999' } }, 'Unit'),
+                                                React.createElement('select', {
+                                                    value: unit,
+                                                    onChange: function(e) { setUnit(e.target.value); },
+                                                    style: {
+                                                        width: '100%',
+                                                        padding: '10px',
+                                                        border: '1px solid #ddd',
+                                                        borderRadius: '4px',
+                                                        fontSize: '14px',
+                                                    }
+                                                },
+                                                    React.createElement('option', { value: 'mm' }, 'mm'),
+                                                    React.createElement('option', { value: 'cm' }, 'cm'),
+                                                    React.createElement('option', { value: 'm' }, 'm'),
+                                                    React.createElement('option', { value: 'in' }, 'in')
+                                                )
+                                            )
+                                        )
+                                    )
+                                ),
+                                // SECTION: System Intelligence
+                                React.createElement('div', { style: { marginBottom: '32px' } },
+                                    React.createElement('h3', {
+                                        style: {
+                                            fontSize: '16px',
+                                            fontWeight: '600',
+                                            marginBottom: '16px',
+                                            textTransform: 'uppercase',
+                                            color: '#333',
+                                            borderBottom: '2px solid #e0e0e0',
+                                            paddingBottom: '8px'
+                                        }
+                                    }, 'SECTION: System Intelligence'),
+                                    // Normalized (cm)
+                                    React.createElement('div', { style: { marginBottom: '16px' } },
+                                        React.createElement('label', {
+                                            style: { display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '8px', color: '#666' }
+                                        }, 'Normalized (cm)'),
+                                        computedValues.dimsCm ? React.createElement('div', {
+                                            style: {
+                                                padding: '12px',
+                                                backgroundColor: '#f5f5f5',
+                                                borderRadius: '4px',
+                                                fontSize: '14px',
+                                                border: '1px solid #e0e0e0',
+                                                fontFamily: 'monospace'
+                                            }
+                                        }, 'W ' + computedValues.dimsCm.w_cm.toFixed(1) + ' D ' + computedValues.dimsCm.d_cm.toFixed(1) + ' H ' + computedValues.dimsCm.h_cm.toFixed(1)) : React.createElement('div', {
+                                            style: {
+                                                padding: '12px',
+                                                backgroundColor: '#f5f5f5',
+                                                borderRadius: '4px',
+                                                fontSize: '14px',
+                                                color: '#999',
+                                                border: '1px solid #e0e0e0',
+                                                fontFamily: 'monospace'
+                                            }
+                                        }, 'W — D — H —')
+                                    ),
+                                    // CBM
+                                    React.createElement('div', { style: { marginBottom: '16px' } },
+                                        React.createElement('label', {
+                                            style: { display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '8px', color: '#666' }
+                                        }, 'CBM'),
+                                        computedValues.cbm !== null ? React.createElement('div', {
+                                            style: {
+                                                padding: '12px',
+                                                backgroundColor: '#f5f5f5',
+                                                borderRadius: '4px',
+                                                fontSize: '14px',
+                                                border: '1px solid #e0e0e0'
+                                            }
+                                        }, 'CBM: ' + String(computedValues.cbm)) : React.createElement('div', {
+                                            style: {
+                                                padding: '12px',
+                                                backgroundColor: '#f5f5f5',
+                                                borderRadius: '4px',
+                                                fontSize: '14px',
+                                                color: '#999',
+                                                border: '1px solid #e0e0e0'
+                                            }
+                                        }, 'CBM: —')
+                                    ),
+                                    // Sourcing Type
+                                    React.createElement('div', { style: { marginBottom: '16px' } },
+                                        React.createElement('label', {
+                                            style: { display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '8px', color: '#666' }
+                                        }, 'Sourcing Type'),
+                                        React.createElement('div', {
+                                            style: {
+                                                padding: '12px',
+                                                backgroundColor: '#f5f5f5',
+                                                borderRadius: '4px',
+                                                fontSize: '14px',
+                                                border: '1px solid #e0e0e0'
+                                            }
+                                        }, computedValues.sourcingType || 'furniture')
+                                    ),
+                                    // Timeline Type
+                                    React.createElement('div', { style: { marginBottom: '16px' } },
+                                        React.createElement('label', {
+                                            style: { display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '8px', color: '#666' }
+                                        }, 'Timeline Type'),
+                                        React.createElement('div', {
+                                            style: {
+                                                padding: '12px',
+                                                backgroundColor: '#f5f5f5',
+                                                borderRadius: '4px',
+                                                fontSize: '14px',
+                                                border: '1px solid #e0e0e0'
+                                            }
+                                        }, computedValues.timelineType || 'furniture_6_step')
+                                    ),
+                                    // Reason
+                                    React.createElement('div', { style: { marginBottom: '16px' } },
+                                        React.createElement('label', {
+                                            style: { display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '8px', color: '#666' }
+                                        }, 'Reason'),
+                                        React.createElement('div', {
+                                            style: {
+                                                padding: '12px',
+                                                backgroundColor: '#f5f5f5',
+                                                borderRadius: '4px',
+                                                fontSize: '14px',
+                                                border: '1px solid #e0e0e0'
+                                            }
+                                        }, 'default')
+                                    )
+                                ),
+                                // SECTION: Inspiration / Reference
+                                React.createElement('div', { style: { marginBottom: '32px' } },
+                                    React.createElement('h3', {
+                                        style: {
+                                            fontSize: '16px',
+                                            fontWeight: '600',
+                                            marginBottom: '16px',
+                                            textTransform: 'uppercase',
+                                            color: '#333',
+                                            borderBottom: '2px solid #e0e0e0',
+                                            paddingBottom: '8px'
+                                        }
+                                    }, 'SECTION: Inspiration / Reference'),
                                     inspiration.length > 0 ? React.createElement('div', {
                                         style: {
                                             width: '100%',
@@ -4642,11 +4993,11 @@ class N88_RFQ_Admin {
                                             display: 'flex',
                                             flexWrap: 'wrap',
                                             gap: '10px',
-                                            alignItems: 'stretch'
+                                            alignItems: 'stretch',
+                                            marginBottom: '12px'
                                         }
                                     },
                                         inspiration.map(function(insp, idx) {
-                                            // Calculate image size based on count: 1 image = full width, 2 images = 50% each, 3+ = grid
                                             var imageCount = inspiration.length;
                                             var containerStyle = {};
                                             
@@ -4679,7 +5030,7 @@ class N88_RFQ_Admin {
                                             },
                                                 insp.url ? React.createElement('img', {
                                                     src: insp.url,
-                                                    alt: insp.title || 'Material',
+                                                    alt: insp.title || 'Reference',
                                                     style: {
                                                         width: '100%',
                                                         height: '100%',
@@ -4729,7 +5080,7 @@ class N88_RFQ_Admin {
                                             justifyContent: 'center',
                                             color: '#999',
                                             fontSize: '14px',
-                                            position: 'relative'
+                                            marginBottom: '12px'
                                         }
                                     },
                                         React.createElement('div', {
@@ -4745,140 +5096,9 @@ class N88_RFQ_Admin {
                                                     opacity: 0.3
                                                 }
                                             }, '📷'),
-                                            React.createElement('div', null, 'No Preview Available')
+                                            React.createElement('div', null, 'No reference images')
                                         )
-                                    )
-                                ),
-                                // Category
-                                React.createElement('div', { style: { marginBottom: '24px' } },
-                                    React.createElement('label', {
-                                        style: { display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '8px', textTransform: 'uppercase', color: '#666' }
-                                    }, 'Category'),
-                                    React.createElement('select', {
-                                        value: category,
-                                        onChange: function(e) { setCategory(e.target.value); },
-                                        style: {
-                                            width: '100%',
-                                            padding: '10px',
-                                            border: '1px solid #ddd',
-                                            borderRadius: '4px',
-                                            fontSize: '14px',
-                                        }
-                                    },
-                                        React.createElement('option', { value: '' }, 'Select Category'),
-                                        React.createElement('option', { value: 'furniture' }, 'Furniture'),
-                                        React.createElement('option', { value: 'lighting' }, 'Lighting'),
-                                        React.createElement('option', { value: 'accessory' }, 'Accessory'),
-                                        React.createElement('option', { value: 'art' }, 'Art')
-                                    )
-                                ),
-                                // Description
-                                React.createElement('div', { style: { marginBottom: '24px' } },
-                                    React.createElement('label', {
-                                        style: { display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '8px', textTransform: 'uppercase', color: '#666' }
-                                    }, 'Description'),
-                                    React.createElement('textarea', {
-                                        value: description,
-                                        onChange: function(e) { setDescription(e.target.value); },
-                                        placeholder: 'Lobby seating for reception area',
-                                        rows: 4,
-                                        style: {
-                                            width: '100%',
-                                            padding: '10px',
-                                            border: '1px solid #ddd',
-                                            borderRadius: '4px',
-                                            fontSize: '14px',
-                                            fontFamily: 'inherit',
-                                            resize: 'vertical',
-                                        }
-                                    })
-                                ),
-                                // Dimensions (User Input)
-                                React.createElement('div', { style: { marginBottom: '24px' } },
-                                    React.createElement('label', {
-                                        style: { display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '8px', textTransform: 'uppercase', color: '#666' }
-                                    }, 'Dimensions (User Input)'),
-                                    React.createElement('div', {
-                                        style: { display: 'flex', gap: '8px', marginBottom: '10px' }
-                                    },
-                                        React.createElement('input', {
-                                            type: 'number',
-                                            value: width,
-                                            onChange: function(e) { setWidth(e.target.value); },
-                                            placeholder: 'Width',
-                                            style: { width: '80px', padding: '8px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '14px' }
-                                        }),
-                                        React.createElement('input', {
-                                            type: 'number',
-                                            value: depth,
-                                            onChange: function(e) { setDepth(e.target.value); },
-                                            placeholder: 'Depth',
-                                            style: { width: '80px', padding: '8px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '14px' }
-                                        }),
-                                        React.createElement('input', {
-                                            type: 'number',
-                                            value: height,
-                                            onChange: function(e) { setHeight(e.target.value); },
-                                            placeholder: 'Height',
-                                            style: { width: '80px', padding: '8px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '14px' }
-                                        })
                                     ),
-                                    React.createElement('select', {
-                                        value: unit,
-                                        onChange: function(e) { setUnit(e.target.value); },
-                                        style: { width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '14px' }
-                                    },
-                                        React.createElement('option', { value: 'mm' }, 'mm'),
-                                        React.createElement('option', { value: 'cm' }, 'cm'),
-                                        React.createElement('option', { value: 'm' }, 'm'),
-                                        React.createElement('option', { value: 'in' }, 'in')
-                                    )
-                                ),
-                                // System Computed (Read-Only)
-                                React.createElement('div', { style: { marginBottom: '24px' } },
-                                    React.createElement('label', {
-                                        style: { display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '8px', textTransform: 'uppercase', color: '#666' }
-                                    }, 'System Computed (Read-Only)'),
-                                    computedValues.dimsCm ? React.createElement('div', {
-                                        style: { marginBottom: '8px', padding: '10px', backgroundColor: '#f9f9f9', borderRadius: '4px', fontSize: '13px' }
-                                    },
-                                        React.createElement('strong', null, 'Normalized: '),
-                                        computedValues.dimsCm.w_cm.toFixed(1) + 'cm × ' + computedValues.dimsCm.d_cm.toFixed(1) + 'cm × ' + computedValues.dimsCm.h_cm.toFixed(1) + 'cm'
-                                    ) : React.createElement('div', {
-                                        style: { marginBottom: '8px', padding: '10px', backgroundColor: '#f9f9f9', borderRadius: '4px', fontSize: '13px', color: '#999' }
-                                    }, 'Enter dimensions to compute'),
-                                    computedValues.cbm !== null ? React.createElement('div', {
-                                        style: { marginBottom: '8px', padding: '10px', backgroundColor: '#f9f9f9', borderRadius: '4px', fontSize: '13px' }
-                                    },
-                                        React.createElement('strong', null, 'CBM: '),
-                                        String(computedValues.cbm)
-                                    ) : React.createElement('div', {
-                                        style: { marginBottom: '8px', padding: '10px', backgroundColor: '#f9f9f9', borderRadius: '4px', fontSize: '13px', color: '#999' }
-                                    }, 'CBM: — (requires all dimensions)')
-                                ),
-                                // System Assignments (Read-Only)
-                                React.createElement('div', { style: { marginBottom: '24px' } },
-                                    React.createElement('label', {
-                                        style: { display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '8px', textTransform: 'uppercase', color: '#666' }
-                                    }, 'System Assignments (Read-Only)'),
-                                    React.createElement('div', {
-                                        style: { marginBottom: '8px', padding: '10px', backgroundColor: '#f9f9f9', borderRadius: '4px', fontSize: '13px' }
-                                    },
-                                        React.createElement('strong', null, 'sourcing_type: '),
-                                        computedValues.sourcingType || '—'
-                                    ),
-                                    React.createElement('div', {
-                                        style: { marginBottom: '8px', padding: '10px', backgroundColor: '#f9f9f9', borderRadius: '4px', fontSize: '13px' }
-                                    },
-                                        React.createElement('strong', null, 'timeline_type: '),
-                                        computedValues.timelineType || '—'
-                                    )
-                                ),
-                                // Materials / Inspiration (label and upload button at bottom)
-                                React.createElement('div', { style: { marginBottom: '24px' } },
-                                    React.createElement('label', {
-                                        style: { display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '8px', textTransform: 'uppercase', color: '#666' }
-                                    }, 'Materials / Inspiration'),
                                     React.createElement('input', {
                                         type: 'file',
                                         id: 'inspiration-file-input-' + (item.id ? String(item.id).replace(/[^a-zA-Z0-9]/g, '-') : 'default'),
@@ -4906,7 +5126,96 @@ class N88_RFQ_Admin {
                                             cursor: 'pointer',
                                             fontSize: '13px',
                                         }
-                                    }, '+ Upload Image')
+                                    }, '+ Add Reference Image')
+                                ),
+                                // SECTION: Actions
+                                React.createElement('div', { style: { marginBottom: '32px' } },
+                                    React.createElement('h3', {
+                                        style: {
+                                            fontSize: '16px',
+                                            fontWeight: '600',
+                                            marginBottom: '16px',
+                                            textTransform: 'uppercase',
+                                            color: '#333',
+                                            borderBottom: '2px solid #e0e0e0',
+                                            paddingBottom: '8px'
+                                        }
+                                    }, 'SECTION: Actions'),
+                                    React.createElement('div', {
+                                        style: { display: 'flex', flexDirection: 'row', gap: '10px' }
+                                    },
+                                        React.createElement('button', {
+                                            type: 'button',
+                                            onClick: function() {
+                                                if (!priceRequested) {
+                                                    setPriceRequested(true);
+                                                }
+                                            },
+                                            disabled: priceRequested,
+                                            style: {
+                                                flex: 1,
+                                                padding: '12px 20px',
+                                                fontWeight: '500',
+                                                cursor: priceRequested ? 'not-allowed' : 'pointer',
+                                                backgroundColor: priceRequested ? '#e0e0e0' : '#0073aa',
+                                                color: priceRequested ? '#999' : '#fff',
+                                                border: '1px solid ' + (priceRequested ? '#ccc' : '#0073aa'),
+                                                borderRadius: '4px',
+                                                fontSize: '14px',
+                                                textAlign: 'center',
+                                                transition: 'all 0.2s',
+                                                boxShadow: priceRequested ? 'none' : '0 2px 4px rgba(0,0,0,0.1)',
+                                            }
+                                        }, priceRequested ? 'Price Requested' : 'Request Price'),
+                                        React.createElement('button', {
+                                            type: 'button',
+                                            style: {
+                                                flex: 1,
+                                                padding: '12px 20px',
+                                                fontWeight: '500',
+                                                backgroundColor: '#f0f0f0',
+                                                color: '#666',
+                                                border: '1px solid #ddd',
+                                                borderRadius: '4px',
+                                                cursor: 'pointer',
+                                                fontSize: '14px',
+                                                textAlign: 'center',
+                                                transition: 'all 0.2s',
+                                                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                            },
+                                            onMouseEnter: function(e) {
+                                                e.target.style.backgroundColor = '#e0e0e0';
+                                            },
+                                            onMouseLeave: function(e) {
+                                                e.target.style.backgroundColor = '#f0f0f0';
+                                            }
+                                        }, 'Request Shipping')
+                                    )
+                                ),
+                                // SECTION: Thread
+                                React.createElement('div', { style: { marginBottom: '32px' } },
+                                    React.createElement('h3', {
+                                        style: {
+                                            fontSize: '16px',
+                                            fontWeight: '600',
+                                            marginBottom: '16px',
+                                            textTransform: 'uppercase',
+                                            color: '#333',
+                                            borderBottom: '2px solid #e0e0e0',
+                                            paddingBottom: '8px'
+                                        }
+                                    }, 'SECTION: Thread'),
+                                    React.createElement('div', {
+                                        style: {
+                                            padding: '12px',
+                                            backgroundColor: '#f5f5f5',
+                                            borderRadius: '4px',
+                                            fontSize: '14px',
+                                            color: '#666',
+                                            border: '1px solid #e0e0e0'
+                                        }
+                                    }, '— Comments/admin replies / approvals')
+                                )
                                 )
                             ),
                             // Footer Actions

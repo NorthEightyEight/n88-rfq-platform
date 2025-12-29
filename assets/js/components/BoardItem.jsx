@@ -643,6 +643,8 @@ const BoardItem = ({ item, onLayoutChanged, boardId }) => {
                 item={item}
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
+                priceRequested={priceRequested}
+                onPriceRequest={() => setPriceRequested(true)}
                 onSave={async (itemId, payload) => {
                     // Save item facts via AJAX
                     if (boardId && boardId > 0) {

@@ -84,18 +84,29 @@ const assignTimelineType = (sourcingType) => {
 /**
  * ItemDetailModal - Right-side drawer for item facts
  */
-const ItemDetailModal = ({ item, isOpen, onClose, onSave }) => {
+const ItemDetailModal = ({ item, isOpen, onClose, onSave, priceRequested = false, onPriceRequest }) => {
     const updateLayout = useBoardStore((state) => state.updateLayout);
     
     // Form state - convert numbers to strings for input fields
     const [category, setCategory] = React.useState(item.category || item.item_type || '');
     const [description, setDescription] = React.useState(item.description || '');
+    const [quantity, setQuantity] = React.useState(item.quantity ? String(item.quantity) : '');
     const [width, setWidth] = React.useState(item.dims?.w ? String(item.dims.w) : '');
     const [depth, setDepth] = React.useState(item.dims?.d ? String(item.dims.d) : '');
     const [height, setHeight] = React.useState(item.dims?.h ? String(item.dims.h) : '');
     const [unit, setUnit] = React.useState(item.dims?.unit || 'in');
     const [inspiration, setInspiration] = React.useState(item.inspiration || []);
     const [isSaving, setIsSaving] = React.useState(false);
+    
+    // Get item ID and status
+    const itemId = item.id || item.item_id || '';
+    const itemStatus = item.status || 'Draft';
+    
+    // Get current user name (from WordPress or item owner)
+    const currentUserName = window.N88StudioOS?.currentUser?.display_name || 
+                           window.N88StudioOS?.currentUser?.name || 
+                           item.owner_name || 
+                           'User';
     
     // Computed values (read-only) - initialize from saved item data
     const [computedValues, setComputedValues] = React.useState({
@@ -159,6 +170,7 @@ const ItemDetailModal = ({ item, isOpen, onClose, onSave }) => {
             const payload = {
                 category,
                 description,
+                quantity: quantity ? parseInt(quantity) : null,
                 dims: {
                     w: width ? parseFloat(width) : null,
                     d: depth ? parseFloat(depth) : null,
@@ -265,25 +277,25 @@ const ItemDetailModal = ({ item, isOpen, onClose, onSave }) => {
                     >
                         {/* Header */}
                         <div style={{
-                            padding: '20px',
+                            padding: '12px 16px',
                             borderBottom: '1px solid #e0e0e0',
                             display: 'flex',
                             justifyContent: 'space-between',
                             alignItems: 'center',
                         }}>
-                            <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '600' }}>
-                                Item Detail
+                            <h2 style={{ margin: 0, fontSize: '16px', fontWeight: '600' }}>
+                                Item Detail ({currentUserName})
                             </h2>
                             <button
                                 onClick={onClose}
                                 style={{
                                     background: 'none',
                                     border: 'none',
-                                    fontSize: '24px',
+                                    fontSize: '20px',
                                     cursor: 'pointer',
                                     padding: '0',
-                                    width: '30px',
-                                    height: '30px',
+                                    width: '24px',
+                                    height: '24px',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
@@ -297,28 +309,336 @@ const ItemDetailModal = ({ item, isOpen, onClose, onSave }) => {
                         <div style={{
                             flex: 1,
                             overflowY: 'auto',
-                            padding: '20px',
+                            padding: 0,
                         }}>
-                            {/* Image Preview Box (at top - shows uploaded material images or placeholder) */}
-                            <div style={{ marginBottom: '24px' }}>
-                                <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '8px', textTransform: 'uppercase', color: '#666' }}>
-                                    Materials / Inspiration
+                            {/* Item ID and Status */}
+                            <div style={{
+                                padding: '12px 16px',
+                                borderBottom: '1px solid #e0e0e0',
+                                backgroundColor: '#f9f9f9',
+                            }}>
+                                <div style={{ marginBottom: '4px', fontSize: '14px', fontWeight: '600' }}>
+                                    Item #{itemId}
+                                </div>
+                                <div style={{ fontSize: '12px', color: '#666' }}>
+                                    Status: {itemStatus}
+                                </div>
+                            </div>
+                            
+                            {/* Content Sections */}
+                            <div style={{
+                                padding: '12px 16px',
+                            }}>
+                            {/* SECTION: Item Facts (Editable) */}
+                            <div style={{ marginBottom: '16px' }}>
+                                <h3 style={{ 
+                                    fontSize: '12px', 
+                                    fontWeight: '600', 
+                                    marginBottom: '10px', 
+                                    textTransform: 'uppercase', 
+                                    color: '#333',
+                                    borderBottom: '1px solid #e0e0e0',
+                                    paddingBottom: '6px'
+                                }}>
+                                    SECTION: Item Facts
+                                </h3>
+                                
+                                {/* Category */}
+                                <div style={{ marginBottom: '12px' }}>
+                                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '4px', color: '#666' }}>
+                                        Category
+                                    </label>
+                                    <select
+                                        value={category}
+                                        onChange={(e) => setCategory(e.target.value)}
+                                        style={{
+                                            width: '100%',
+                                            padding: '6px 8px',
+                                            border: '1px solid #ddd',
+                                            borderRadius: '4px',
+                                            fontSize: '12px',
+                                        }}
+                                    >
+                                        <option value="">Select Category</option>
+                                        <option value="furniture">Furniture</option>
+                                        <option value="lighting">Lighting</option>
+                                        <option value="accessory">Accessory</option>
+                                        <option value="art">Art</option>
+                                        <option value="other">Other</option>
+                                    </select>
+                                </div>
+                                
+                                {/* Description */}
+                                <div style={{ marginBottom: '12px' }}>
+                                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '4px', color: '#666' }}>
+                                        Description
+                                    </label>
+                                    <textarea
+                                        value={description}
+                                        onChange={(e) => setDescription(e.target.value)}
+                                        placeholder="Enter item description"
+                                        rows={2}
+                                        style={{
+                                            width: '100%',
+                                            padding: '6px 8px',
+                                            border: '1px solid #ddd',
+                                            borderRadius: '4px',
+                                            fontSize: '12px',
+                                            fontFamily: 'inherit',
+                                            resize: 'vertical',
+                                        }}
+                                    />
+                                </div>
+                                
+                                {/* Quantity */}
+                                <div style={{ marginBottom: '12px' }}>
+                                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '4px', color: '#666' }}>
+                                        Quantity
+                                    </label>
+                                    <input
+                                        type="number"
+                                        value={quantity}
+                                        onChange={(e) => setQuantity(e.target.value)}
+                                        placeholder="Enter quantity"
+                                        min="1"
+                                        style={{
+                                            width: '100%',
+                                            padding: '6px 8px',
+                                            border: '1px solid #ddd',
+                                            borderRadius: '4px',
+                                            fontSize: '12px',
+                                        }}
+                                    />
+                                </div>
+                                
+                                {/* Dimensions */}
+                                <div style={{ marginBottom: '12px' }}>
+                                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '4px', color: '#666' }}>
+                                        Dimensions
+                                    </label>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '6px', alignItems: 'end' }}>
+                                        <div>
+                                            <label style={{ display: 'block', fontSize: '10px', marginBottom: '2px', color: '#999' }}>W</label>
+                                            <input
+                                                type="number"
+                                                value={width}
+                                                onChange={(e) => setWidth(e.target.value)}
+                                                placeholder="Width"
+                                                style={{
+                                                    width: '100%',
+                                                    padding: '6px 8px',
+                                                    border: '1px solid #ddd',
+                                                    borderRadius: '4px',
+                                                    fontSize: '12px',
+                                                }}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label style={{ display: 'block', fontSize: '10px', marginBottom: '2px', color: '#999' }}>D</label>
+                                            <input
+                                                type="number"
+                                                value={depth}
+                                                onChange={(e) => setDepth(e.target.value)}
+                                                placeholder="Depth"
+                                                style={{
+                                                    width: '100%',
+                                                    padding: '6px 8px',
+                                                    border: '1px solid #ddd',
+                                                    borderRadius: '4px',
+                                                    fontSize: '12px',
+                                                }}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label style={{ display: 'block', fontSize: '10px', marginBottom: '2px', color: '#999' }}>H</label>
+                                            <input
+                                                type="number"
+                                                value={height}
+                                                onChange={(e) => setHeight(e.target.value)}
+                                                placeholder="Height"
+                                                style={{
+                                                    width: '100%',
+                                                    padding: '6px 8px',
+                                                    border: '1px solid #ddd',
+                                                    borderRadius: '4px',
+                                                    fontSize: '12px',
+                                                }}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label style={{ display: 'block', fontSize: '10px', marginBottom: '2px', color: '#999' }}>Unit</label>
+                                            <select
+                                                value={unit}
+                                                onChange={(e) => setUnit(e.target.value)}
+                                                style={{
+                                                    width: '100%',
+                                                    padding: '6px 8px',
+                                                    border: '1px solid #ddd',
+                                                    borderRadius: '4px',
+                                                    fontSize: '12px',
+                                                }}
+                                            >
+                                                <option value="mm">mm</option>
+                                                <option value="cm">cm</option>
+                                                <option value="m">m</option>
+                                                <option value="in">in</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            {/* SECTION: System Intelligence (Read-Only) */}
+                            <div style={{ marginBottom: '16px' }}>
+                                <h3 style={{ 
+                                    fontSize: '12px', 
+                                    fontWeight: '600', 
+                                    marginBottom: '10px', 
+                                    textTransform: 'uppercase', 
+                                    color: '#333',
+                                    borderBottom: '1px solid #e0e0e0',
+                                    paddingBottom: '6px'
+                                }}>
+                                    SECTION: System Intelligence
+                                </h3>
+                                
+                                {/* Normalized (cm) */}
+                                <div style={{ marginBottom: '10px' }}>
+                                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '4px', color: '#666' }}>
+                                        Normalized (cm)
+                                    </label>
+                                    {computedValues.dimsCm ? (
+                                        <div style={{ 
+                                            padding: '6px 8px', 
+                                            backgroundColor: '#f5f5f5', 
+                                            borderRadius: '4px', 
+                                            fontSize: '12px',
+                                            border: '1px solid #e0e0e0',
+                                            fontFamily: 'monospace'
+                                        }}>
+                                            W {computedValues.dimsCm.w_cm.toFixed(1)} D {computedValues.dimsCm.d_cm.toFixed(1)} H {computedValues.dimsCm.h_cm.toFixed(1)}
+                                        </div>
+                                    ) : (
+                                        <div style={{ 
+                                            padding: '6px 8px', 
+                                            backgroundColor: '#f5f5f5', 
+                                            borderRadius: '4px', 
+                                            fontSize: '12px',
+                                            color: '#999',
+                                            border: '1px solid #e0e0e0',
+                                            fontFamily: 'monospace'
+                                        }}>
+                                            W — D — H —
+                                        </div>
+                                    )}
+                                </div>
+                                
+                                {/* CBM */}
+                                <div style={{ marginBottom: '10px' }}>
+                                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '4px', color: '#666' }}>
+                                        CBM
+                                    </label>
+                                    {computedValues.cbm !== null ? (
+                                        <div style={{ 
+                                            padding: '6px 8px', 
+                                            backgroundColor: '#f5f5f5', 
+                                            borderRadius: '4px', 
+                                            fontSize: '12px',
+                                            border: '1px solid #e0e0e0'
+                                        }}>
+                                            CBM: {computedValues.cbm}
+                                        </div>
+                                    ) : (
+                                        <div style={{ 
+                                            padding: '6px 8px', 
+                                            backgroundColor: '#f5f5f5', 
+                                            borderRadius: '4px', 
+                                            fontSize: '12px',
+                                            color: '#999',
+                                            border: '1px solid #e0e0e0'
+                                        }}>
+                                            CBM: —
+                                        </div>
+                                    )}
+                                </div>
+                                
+                                {/* Sourcing Type */}
+                                <div style={{ marginBottom: '10px' }}>
+                                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '4px', color: '#666' }}>
+                                        Sourcing Type
+                                    </label>
+                                    <div style={{ 
+                                        padding: '6px 8px', 
+                                        backgroundColor: '#f5f5f5', 
+                                        borderRadius: '4px', 
+                                        fontSize: '12px',
+                                        border: '1px solid #e0e0e0'
+                                    }}>
+                                        {computedValues.sourcingType || 'furniture'}
+                                    </div>
+                                </div>
+                                
+                                {/* Timeline Type */}
+                                <div style={{ marginBottom: '10px' }}>
+                                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '4px', color: '#666' }}>
+                                        Timeline Type
+                                    </label>
+                                    <div style={{ 
+                                        padding: '6px 8px', 
+                                        backgroundColor: '#f5f5f5', 
+                                        borderRadius: '4px', 
+                                        fontSize: '12px',
+                                        border: '1px solid #e0e0e0'
+                                    }}>
+                                        {computedValues.timelineType || 'furniture_6_step'}
+                                    </div>
+                                </div>
+                                
+                                {/* Reason */}
+                                <div style={{ marginBottom: '10px' }}>
+                                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '4px', color: '#666' }}>
+                                        Reason
                                 </label>
+                                    <div style={{ 
+                                        padding: '6px 8px', 
+                                        backgroundColor: '#f5f5f5', 
+                                        borderRadius: '4px', 
+                                        fontSize: '12px',
+                                        border: '1px solid #e0e0e0'
+                                    }}>
+                                        default
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            {/* SECTION: Inspiration / Reference (Phase 1.2) */}
+                            <div style={{ marginBottom: '16px' }}>
+                                <h3 style={{ 
+                                    fontSize: '12px', 
+                                    fontWeight: '600', 
+                                    marginBottom: '10px', 
+                                    textTransform: 'uppercase', 
+                                    color: '#333',
+                                    borderBottom: '1px solid #e0e0e0',
+                                    paddingBottom: '6px'
+                                }}>
+                                    SECTION: Inspiration / Reference
+                                </h3>
+                                
                                 {inspiration.length > 0 ? (
                                     <div style={{ 
                                         width: '100%',
-                                        minHeight: inspiration.length === 1 ? '300px' : '200px',
+                                        minHeight: inspiration.length === 1 ? '150px' : '100px',
                                         backgroundColor: '#f0f0f0',
                                         border: '1px solid #e0e0e0',
                                         borderRadius: '4px',
-                                        padding: '10px',
+                                        padding: '6px',
                                         display: 'flex',
                                         flexWrap: 'wrap',
-                                        gap: '10px',
+                                        gap: '6px',
                                         alignItems: 'stretch'
                                     }}>
                                         {inspiration.map((insp, idx) => {
-                                            // Calculate image size based on count: 1 image = full width, 2 images = 50% each, 3+ = grid
                                             const imageCount = inspiration.length;
                                             let containerStyle = {};
                                             
@@ -326,22 +646,22 @@ const ItemDetailModal = ({ item, isOpen, onClose, onSave }) => {
                                                 containerStyle = {
                                                     position: 'relative',
                                                     width: '100%',
-                                                    height: '300px',
+                                                    height: '150px',
                                                     flex: '0 0 100%'
                                                 };
                                             } else if (imageCount === 2) {
                                                 containerStyle = {
                                                     position: 'relative',
-                                                    width: 'calc(50% - 5px)',
-                                                    height: '200px',
-                                                    flex: '0 0 calc(50% - 5px)'
+                                                    width: 'calc(50% - 3px)',
+                                                    height: '100px',
+                                                    flex: '0 0 calc(50% - 3px)'
                                                 };
                                             } else {
                                                 containerStyle = {
                                                     position: 'relative',
-                                                    width: 'calc(33.333% - 7px)',
-                                                    height: '200px',
-                                                    flex: '0 0 calc(33.333% - 7px)'
+                                                    width: 'calc(33.333% - 4px)',
+                                                    height: '100px',
+                                                    flex: '0 0 calc(33.333% - 4px)'
                                                 };
                                             }
                                             
@@ -350,7 +670,7 @@ const ItemDetailModal = ({ item, isOpen, onClose, onSave }) => {
                                                     {insp.url && (
                                                         <img 
                                                             src={insp.url} 
-                                                            alt={insp.title || 'Material'} 
+                                                            alt={insp.title || 'Reference'} 
                                                             style={{ 
                                                                 width: '100%',
                                                                 height: '100%',
@@ -392,7 +712,7 @@ const ItemDetailModal = ({ item, isOpen, onClose, onSave }) => {
                                 ) : (
                                     <div style={{ 
                                         width: '100%',
-                                        height: '200px',
+                                        height: '100px',
                                         backgroundColor: '#f0f0f0',
                                         border: '2px dashed #ccc',
                                         borderRadius: '4px',
@@ -400,171 +720,15 @@ const ItemDetailModal = ({ item, isOpen, onClose, onSave }) => {
                                         alignItems: 'center',
                                         justifyContent: 'center',
                                         color: '#999',
-                                        fontSize: '14px'
+                                        fontSize: '12px'
                                     }}>
                                         <div style={{ textAlign: 'center', color: '#999' }}>
-                                            <div style={{ fontSize: '48px', marginBottom: '10px', opacity: 0.3 }}>📷</div>
-                                            <div>No images Preview yet</div>
+                                            <div style={{ fontSize: '32px', marginBottom: '6px', opacity: 0.3 }}>📷</div>
+                                            <div>No reference images</div>
                                         </div>
                                     </div>
                                 )}
-                            </div>
-                            
-                            {/* Category */}
-                            <div style={{ marginBottom: '24px' }}>
-                                <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '8px', textTransform: 'uppercase', color: '#666' }}>
-                                    Category
-                                </label>
-                                <input
-                                    type="text"
-                                    value={category}
-                                    onChange={(e) => setCategory(e.target.value)}
-                                    placeholder="e.g., Sofa"
-                                    style={{
-                                        width: '100%',
-                                        padding: '10px',
-                                        border: '1px solid #ddd',
-                                        borderRadius: '4px',
-                                        fontSize: '14px',
-                                    }}
-                                />
-                            </div>
-                            
-                            {/* Description */}
-                            <div style={{ marginBottom: '24px' }}>
-                                <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '8px', textTransform: 'uppercase', color: '#666' }}>
-                                    Description
-                                </label>
-                                <textarea
-                                    value={description}
-                                    onChange={(e) => setDescription(e.target.value)}
-                                    placeholder="Lobby seating for reception area"
-                                    rows={4}
-                                    style={{
-                                        width: '100%',
-                                        padding: '10px',
-                                        border: '1px solid #ddd',
-                                        borderRadius: '4px',
-                                        fontSize: '14px',
-                                        fontFamily: 'inherit',
-                                        resize: 'vertical',
-                                    }}
-                                />
-                            </div>
-                            
-                            {/* Dimensions (User Input) */}
-                            <div style={{ marginBottom: '24px' }}>
-                                <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '8px', textTransform: 'uppercase', color: '#666' }}>
-                                    Dimensions (User Input)
-                                </label>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginBottom: '10px' }}>
-                                    <div>
-                                        <input
-                                            type="number"
-                                            value={width}
-                                            onChange={(e) => setWidth(e.target.value)}
-                                            placeholder="Width"
-                                            style={{
-                                                width: '100%',
-                                                padding: '10px',
-                                                border: '1px solid #ddd',
-                                                borderRadius: '4px',
-                                                fontSize: '14px',
-                                            }}
-                                        />
-                                    </div>
-                                    <div>
-                                        <input
-                                            type="number"
-                                            value={depth}
-                                            onChange={(e) => setDepth(e.target.value)}
-                                            placeholder="Depth"
-                                            style={{
-                                                width: '100%',
-                                                padding: '10px',
-                                                border: '1px solid #ddd',
-                                                borderRadius: '4px',
-                                                fontSize: '14px',
-                                            }}
-                                        />
-                                    </div>
-                                    <div>
-                                        <input
-                                            type="number"
-                                            value={height}
-                                            onChange={(e) => setHeight(e.target.value)}
-                                            placeholder="Height"
-                                            style={{
-                                                width: '100%',
-                                                padding: '10px',
-                                                border: '1px solid #ddd',
-                                                borderRadius: '4px',
-                                                fontSize: '14px',
-                                            }}
-                                        />
-                                    </div>
-                                </div>
-                                <select
-                                    value={unit}
-                                    onChange={(e) => setUnit(e.target.value)}
-                                    style={{
-                                        width: '100%',
-                                        padding: '10px',
-                                        border: '1px solid #ddd',
-                                        borderRadius: '4px',
-                                        fontSize: '14px',
-                                    }}
-                                >
-                                    <option value="mm">mm</option>
-                                    <option value="cm">cm</option>
-                                    <option value="m">m</option>
-                                    <option value="in">in</option>
-                                </select>
-                            </div>
-                            
-                            {/* System Computed (Read-Only) */}
-                            <div style={{ marginBottom: '24px' }}>
-                                <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '8px', textTransform: 'uppercase', color: '#666' }}>
-                                    System Computed (Read-Only)
-                                </label>
-                                {computedValues.dimsCm ? (
-                                    <div style={{ marginBottom: '8px', padding: '10px', backgroundColor: '#f9f9f9', borderRadius: '4px', fontSize: '13px' }}>
-                                        <strong>Normalized:</strong> {computedValues.dimsCm.w_cm.toFixed(1)}cm × {computedValues.dimsCm.d_cm.toFixed(1)}cm × {computedValues.dimsCm.h_cm.toFixed(1)}cm
-                                    </div>
-                                ) : (
-                                    <div style={{ marginBottom: '8px', padding: '10px', backgroundColor: '#f9f9f9', borderRadius: '4px', fontSize: '13px', color: '#999' }}>
-                                        Enter dimensions to compute
-                                    </div>
-                                )}
-                                {computedValues.cbm !== null ? (
-                                    <div style={{ marginBottom: '8px', padding: '10px', backgroundColor: '#f9f9f9', borderRadius: '4px', fontSize: '13px' }}>
-                                        <strong>CBM:</strong> {computedValues.cbm}
-                                    </div>
-                                ) : (
-                                    <div style={{ marginBottom: '8px', padding: '10px', backgroundColor: '#f9f9f9', borderRadius: '4px', fontSize: '13px', color: '#999' }}>
-                                        CBM: — (requires all dimensions)
-                                    </div>
-                                )}
-                            </div>
-                            
-                            {/* System Assignments (Read-Only) */}
-                            <div style={{ marginBottom: '24px' }}>
-                                <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '8px', textTransform: 'uppercase', color: '#666' }}>
-                                    System Assignments (Read-Only)
-                                </label>
-                                <div style={{ marginBottom: '8px', padding: '10px', backgroundColor: '#f9f9f9', borderRadius: '4px', fontSize: '13px' }}>
-                                    <strong>sourcing_type:</strong> {computedValues.sourcingType || '—'}
-                                </div>
-                                <div style={{ marginBottom: '8px', padding: '10px', backgroundColor: '#f9f9f9', borderRadius: '4px', fontSize: '13px' }}>
-                                    <strong>timeline_type:</strong> {computedValues.timelineType || '—'}
-                                </div>
-                            </div>
-                            
-                            {/* Materials / Inspiration (label and upload button at bottom) */}
-                            <div style={{ marginBottom: '24px' }}>
-                                <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '8px', textTransform: 'uppercase', color: '#666' }}>
-                                    Materials / Inspiration
-                                </label>
+                                
                                 <input
                                     type="file"
                                     id="inspiration-file-input"
@@ -580,36 +744,130 @@ const ItemDetailModal = ({ item, isOpen, onClose, onSave }) => {
                                         if (input) input.click();
                                     }}
                                     style={{
-                                        padding: '8px 16px',
+                                        marginTop: '8px',
+                                        padding: '6px 12px',
                                         backgroundColor: '#f0f0f0',
                                         border: '1px solid #ddd',
                                         borderRadius: '4px',
                                         cursor: 'pointer',
-                                        fontSize: '13px',
+                                        fontSize: '11px',
                                     }}
                                 >
-                                    + Upload Image
+                                    + Add Reference Image
                                 </button>
                             </div>
-                                                    </div>
+                            
+                            {/* SECTION: Actions */}
+                            <div style={{ marginBottom: '16px' }}>
+                                <h3 style={{ 
+                                    fontSize: '12px', 
+                                    fontWeight: '600', 
+                                    marginBottom: '10px', 
+                                    textTransform: 'uppercase', 
+                                    color: '#333',
+                                    borderBottom: '1px solid #e0e0e0',
+                                    paddingBottom: '6px'
+                                }}>
+                                    SECTION: Actions
+                                </h3>
+                                <div style={{ display: 'flex', flexDirection: 'row', gap: '8px' }}>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            if (onPriceRequest && !priceRequested) {
+                                                onPriceRequest();
+                                            }
+                                        }}
+                                        disabled={priceRequested}
+                                        style={{
+                                            flex: 1,
+                                            padding: '8px 12px',
+                                            fontWeight: '500',
+                                            cursor: priceRequested ? 'not-allowed' : 'pointer',
+                                            backgroundColor: priceRequested ? '#e0e0e0' : '#0073aa',
+                                            color: priceRequested ? '#999' : '#fff',
+                                            border: `1px solid ${priceRequested ? '#ccc' : '#0073aa'}`,
+                                            borderRadius: '4px',
+                                            fontSize: '12px',
+                                            textAlign: 'center',
+                                            transition: 'all 0.2s',
+                                            boxShadow: priceRequested ? 'none' : '0 2px 4px rgba(0,0,0,0.1)',
+                                        }}
+                                    >
+                                        {priceRequested ? 'Price Requested' : 'Request Price'}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        style={{
+                                            flex: 1,
+                                            padding: '8px 12px',
+                                            fontWeight: '500',
+                                            backgroundColor: '#f0f0f0',
+                                            color: '#666',
+                                            border: '1px solid #ddd',
+                                            borderRadius: '4px',
+                                            cursor: 'pointer',
+                                            fontSize: '12px',
+                                            textAlign: 'center',
+                                            transition: 'all 0.2s',
+                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                        }}
+                                        onMouseEnter={(e) => {
+                                            e.target.style.backgroundColor = '#e0e0e0';
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            e.target.style.backgroundColor = '#f0f0f0';
+                                        }}
+                                    >
+                                        Request Shipping
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            {/* SECTION: Thread */}
+                            <div style={{ marginBottom: '16px' }}>
+                                <h3 style={{ 
+                                    fontSize: '12px', 
+                                    fontWeight: '600', 
+                                    marginBottom: '10px', 
+                                    textTransform: 'uppercase', 
+                                    color: '#333',
+                                    borderBottom: '1px solid #e0e0e0',
+                                    paddingBottom: '6px'
+                                }}>
+                                    SECTION: Thread
+                                </h3>
+                                <div style={{ 
+                                    padding: '8px',
+                                    backgroundColor: '#f5f5f5',
+                                    borderRadius: '4px',
+                                    fontSize: '12px',
+                                    color: '#666',
+                                    border: '1px solid #e0e0e0'
+                                }}>
+                                    — Comments/admin replies / approvals
+                                </div>
+                            </div>
+                            </div>
+                        </div>
                         
                         {/* Footer Actions */}
                         <div style={{
-                            padding: '20px',
+                            padding: '12px 16px',
                             borderTop: '1px solid #e0e0e0',
                             display: 'flex',
-                            gap: '10px',
+                            gap: '8px',
                             justifyContent: 'flex-end',
                         }}>
                             <button
                                 onClick={onClose}
                                 style={{
-                                    padding: '10px 20px',
+                                    padding: '6px 12px',
                                     backgroundColor: '#f0f0f0',
                                     border: '1px solid #ddd',
                                     borderRadius: '4px',
                                     cursor: 'pointer',
-                                    fontSize: '14px',
+                                    fontSize: '12px',
                                 }}
                             >
                                 Close
@@ -618,13 +876,13 @@ const ItemDetailModal = ({ item, isOpen, onClose, onSave }) => {
                                 onClick={handleSave}
                                 disabled={isSaving}
                                 style={{
-                                    padding: '10px 20px',
+                                    padding: '6px 12px',
                                     backgroundColor: '#0073aa',
                                     color: '#fff',
                                     border: 'none',
                                     borderRadius: '4px',
                                     cursor: isSaving ? 'not-allowed' : 'pointer',
-                                    fontSize: '14px',
+                                    fontSize: '12px',
                                     opacity: isSaving ? 0.6 : 1,
                                 }}
                             >

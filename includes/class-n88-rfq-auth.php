@@ -165,7 +165,7 @@ class N88_RFQ_Auth {
         ?>
         <div class="n88-auth-container n88-signup-container">
             <div class="n88-auth-form-wrapper">
-                <h2 class="n88-auth-title">Create Designer Account</h2>
+                <h2 class="n88-auth-title">Create Account</h2>
                 
                 <?php if ( $message ) : ?>
                     <div class="n88-auth-message n88-auth-message-<?php echo esc_attr( $message_type ); ?>">
@@ -175,6 +175,20 @@ class N88_RFQ_Auth {
 
                 <form id="n88-signup-form" class="n88-auth-form" method="post">
                     <?php wp_nonce_field( 'n88_register_user', 'n88_signup_nonce' ); ?>
+                    
+                    <div class="n88-form-group">
+                        <label>Account Type <span class="required">*</span></label>
+                        <div style="display: flex; gap: 20px; margin-top: 8px;">
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: normal;">
+                                <input type="radio" name="user_role" value="n88_designer" checked required style="margin: 0;">
+                                <span>Designer</span>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: normal;">
+                                <input type="radio" name="user_role" value="n88_supplier_admin" required style="margin: 0;">
+                                <span>Supplier</span>
+                            </label>
+                        </div>
+                    </div>
                     
                     <div class="n88-form-group">
                         <label for="n88_signup_name">Full Name <span class="required">*</span></label>
@@ -434,6 +448,7 @@ class N88_RFQ_Auth {
         }
 
         // Get and sanitize form data
+        $user_role = isset( $_POST['user_role'] ) ? sanitize_text_field( wp_unslash( $_POST['user_role'] ) ) : '';
         $name = isset( $_POST['name'] ) ? sanitize_text_field( wp_unslash( $_POST['name'] ) ) : '';
         $username = isset( $_POST['username'] ) ? sanitize_user( wp_unslash( $_POST['username'] ) ) : '';
         $email = isset( $_POST['email'] ) ? sanitize_email( wp_unslash( $_POST['email'] ) ) : '';
@@ -442,8 +457,14 @@ class N88_RFQ_Auth {
         $country = isset( $_POST['country'] ) ? sanitize_text_field( wp_unslash( $_POST['country'] ) ) : '';
 
         // Validate required fields
-        if ( empty( $name ) || empty( $username ) || empty( $email ) || empty( $password ) || empty( $company_name ) || empty( $country ) ) {
+        if ( empty( $user_role ) || empty( $name ) || empty( $username ) || empty( $email ) || empty( $password ) || empty( $company_name ) || empty( $country ) ) {
             wp_send_json_error( array( 'message' => 'All fields are required.' ) );
+        }
+
+        // Validate role
+        $allowed_roles = array( 'n88_designer', 'n88_supplier_admin' );
+        if ( ! in_array( $user_role, $allowed_roles, true ) ) {
+            wp_send_json_error( array( 'message' => 'Invalid account type selected.' ) );
         }
 
         // Validate email
@@ -479,9 +500,9 @@ class N88_RFQ_Auth {
             'display_name' => $name,
         ) );
 
-        // Assign n88_designer role (Commit 2.2.1)
+        // Assign role based on user selection (Commit 2.2.1)
         $user = new WP_User( $user_id );
-        $user->set_role( 'n88_designer' );
+        $user->set_role( $user_role );
 
         // Save custom user meta
         update_user_meta( $user_id, 'company_name', $company_name );
@@ -857,14 +878,18 @@ class N88_RFQ_Auth {
      * Render designer dashboard
      */
     public function render_designer_dashboard( $atts = array() ) {
-        // Check if user is logged in and is a designer
+        // Check if user is logged in
         if ( ! is_user_logged_in() ) {
             return '<p>Please <a href="' . esc_url( home_url( '/login/' ) ) . '">log in</a> to access the dashboard.</p>';
         }
 
         $current_user = wp_get_current_user();
-        if ( ! ( in_array( 'n88_designer', $current_user->roles, true ) || in_array( 'designer', $current_user->roles, true ) ) ) {
-            return '<p>Access denied. Designer account required.</p>';
+        $is_designer = in_array( 'n88_designer', $current_user->roles, true ) || in_array( 'designer', $current_user->roles, true );
+        $is_system_operator = in_array( 'n88_system_operator', $current_user->roles, true );
+        
+        // Allow designers and system operators
+        if ( ! $is_designer && ! $is_system_operator ) {
+            return '<p>Access denied. Designer or System Operator account required.</p>';
         }
 
         $user_id = $current_user->ID;
@@ -909,7 +934,7 @@ class N88_RFQ_Auth {
             return '<p><em>Workspace page - This shortcode will redirect designers to their workspace.</em></p>';
         }
 
-        // Check if user is logged in and is a designer
+        // Check if user is logged in
         if ( ! is_user_logged_in() ) {
             wp_redirect( home_url( '/login/' ) );
             exit;
@@ -917,21 +942,14 @@ class N88_RFQ_Auth {
 
         $current_user = wp_get_current_user();
         $is_designer = in_array( 'n88_designer', $current_user->roles, true ) || in_array( 'designer', $current_user->roles, true );
+        $is_system_operator = in_array( 'n88_system_operator', $current_user->roles, true );
         
-        if ( ! $is_designer ) {
-            wp_die( 'Access denied. Designer account required.', 'Access Denied', array( 'response' => 403 ) );
+        // Allow designers and system operators
+        if ( ! $is_designer && ! $is_system_operator ) {
+            wp_die( 'Access denied. Designer or System Operator account required.', 'Access Denied', array( 'response' => 403 ) );
         }
 
-        // Redirect to board page if designer has a board
-        $user_id = $current_user->ID;
-        $designer_board = $this->get_designer_board( $user_id );
-        
-        if ( $designer_board ) {
-            wp_redirect( admin_url( 'admin.php?page=n88-rfq-board-demo&board_id=' . $designer_board->id ) );
-            exit;
-        }
-
-        // Otherwise show workspace creation page
+        // Show workspace page (no automatic redirect to board)
         return $this->render_designer_dashboard( $atts );
     }
 
@@ -960,11 +978,268 @@ class N88_RFQ_Auth {
 
         ob_start();
         ?>
-        <div class="n88-supplier-queue" style="max-width: 1200px; margin: 50px auto; padding: 20px;">
-            <h1>Supplier Queue</h1>
-            <p>This is the supplier queue page. (Stub - to be implemented in later commits)</p>
-            <p>User: <?php echo esc_html( $current_user->display_name ); ?> (<?php echo esc_html( implode( ', ', $current_user->roles ) ); ?>)</p>
+        <div class="n88-supplier-queue" style="max-width: 1400px; margin: 0 auto; padding: 40px 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;">
+            <!-- Header -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; padding-bottom: 15px; border-bottom: 2px solid #e0e0e0;">
+                <h1 style="margin: 0; font-size: 24px; font-weight: 600; color: #333;">NorthEightyEight — Supplier Queue</h1>
+                <div style="font-size: 14px; color: #666;">
+                    Logged in: <?php echo esc_html( $current_user->display_name ); ?>
+                </div>
+            </div>
+            
+            <!-- Filters Section -->
+            <div style="margin-bottom: 30px; padding: 20px; background-color: #f9f9f9; border-radius: 4px;">
+                <div style="font-size: 14px; font-weight: 600; margin-bottom: 15px; color: #333;">Filters:</div>
+                <div style="display: flex; align-items: center; gap: 20px; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <label style="font-size: 14px; color: #666;">Status</label>
+                        <select style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; background-color: #fff; cursor: pointer; min-width: 120px;">
+                            <option value="all">All</option>
+                            <option value="pending">Pending</option>
+                            <option value="awaiting_bid">Awaiting Bid</option>
+                            <option value="bid_submitted">Bid Submitted</option>
+                        </select>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <label style="font-size: 14px; color: #666;">Category</label>
+                        <select style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; background-color: #fff; cursor: pointer; min-width: 120px;">
+                            <option value="all">All</option>
+                            <option value="upholstery">Upholstery</option>
+                            <option value="casegoods">Casegoods</option>
+                            <option value="lighting">Lighting</option>
+                            <option value="accessories">Accessories</option>
+                        </select>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px; flex: 1; min-width: 200px;">
+                        <label style="font-size: 14px; color: #666;">Search</label>
+                        <input type="text" placeholder="Search items..." style="flex: 1; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Routed Items Section -->
+            <div style="margin-bottom: 20px;">
+                <h2 style="margin: 0; font-size: 18px; font-weight: 600; color: #333;">Routed Items (Anonymous RFQs)</h2>
+            </div>
+            
+            <!-- Items Table -->
+            <div style="background-color: #fff; border: 1px solid #e0e0e0; border-radius: 4px; overflow: hidden;">
+                <table style="width: 100%; border-collapse: collapse;">
+                    <thead>
+                        <tr style="background-color: #f5f5f5; border-bottom: 2px solid #e0e0e0;">
+                            <th style="padding: 15px; text-align: left; font-size: 14px; font-weight: 600; color: #333; border-right: 1px solid #e0e0e0;">Item</th>
+                            <th style="padding: 15px; text-align: left; font-size: 14px; font-weight: 600; color: #333; border-right: 1px solid #e0e0e0;">Item Title</th>
+                            <th style="padding: 15px; text-align: left; font-size: 14px; font-weight: 600; color: #333; border-right: 1px solid #e0e0e0;">Category</th>
+                            <th style="padding: 15px; text-align: left; font-size: 14px; font-weight: 600; color: #333; border-right: 1px solid #e0e0e0;">Request Type</th>
+                            <th style="padding: 15px; text-align: left; font-size: 14px; font-weight: 600; color: #333;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Demo data from wireframe -->
+                        <tr style="border-bottom: 1px solid #e0e0e0;">
+                            <td style="padding: 15px; font-size: 14px; color: #ff6600; font-weight: 500;">#1023</td>
+                            <td style="padding: 15px; font-size: 14px; color: #333;">Curved Sofa</td>
+                            <td style="padding: 15px; font-size: 14px; color: #666;">Upholstery</td>
+                            <td style="padding: 15px; font-size: 14px; color: #666;">Pricing Req</td>
+                            <td style="padding: 15px;">
+                                <button class="n88-open-bid-modal" data-item-id="1023" data-item-title="Curved Sofa" data-category="Upholstery" data-request-type="Pricing Req" style="padding: 6px 12px; background-color: #0073aa; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 500;">
+                                    Open ►
+                                </button>
+                            </td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid #e0e0e0;">
+                            <td style="padding: 15px; font-size: 14px; color: #ff6600; font-weight: 500;">#1027</td>
+                            <td style="padding: 15px; font-size: 14px; color: #333;">Dining Chair</td>
+                            <td style="padding: 15px; font-size: 14px; color: #666;">Casegoods</td>
+                            <td style="padding: 15px; font-size: 14px; color: #666;">Awaiting Bid</td>
+                            <td style="padding: 15px;">
+                                <button class="n88-open-bid-modal" data-item-id="1027" data-item-title="Dining Chair" data-category="Casegoods" data-request-type="Awaiting Bid" style="padding: 6px 12px; background-color: #0073aa; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 500;">
+                                    Open ►
+                                </button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 15px; font-size: 14px; color: #ff6600; font-weight: 500;">#1031</td>
+                            <td style="padding: 15px; font-size: 14px; color: #333;">Banquette</td>
+                            <td style="padding: 15px; font-size: 14px; color: #666;">Upholstery</td>
+                            <td style="padding: 15px; font-size: 14px; color: #666;">Bid Submitted</td>
+                            <td style="padding: 15px;">
+                                <button class="n88-open-bid-modal" data-item-id="1031" data-item-title="Banquette" data-category="Upholstery" data-request-type="Bid Submitted" style="padding: 6px 12px; background-color: #0073aa; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 500;">
+                                    View ►
+                                </button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Rules Note -->
+            <div style="margin-top: 30px; padding: 15px; background-color: #f0f0f0; border-left: 4px solid #0073aa; border-radius: 4px;">
+                <p style="margin: 0; font-size: 13px; color: #666; font-style: italic;">
+                    <strong>Rules:</strong> Supplier sees ONLY items routed to them. No designer identity shown.
+                </p>
+            </div>
         </div>
+        
+        <!-- Supplier Bid Modal -->
+        <div id="n88-supplier-bid-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.5); z-index: 10000; overflow: hidden;">
+            <div id="n88-supplier-bid-modal-content" style="position: fixed; top: 0; right: 0; width: 480px; max-width: 90vw; height: 100vh; background-color: #fff; box-shadow: -2px 0 10px rgba(0,0,0,0.2); z-index: 10001; display: flex; flex-direction: column; overflow: hidden;">
+                <!-- Modal content will be populated by JavaScript -->
+            </div>
+        </div>
+        
+        <script>
+        (function() {
+            // Demo item data
+            var demoItems = {
+                '1023': {
+                    id: '1023',
+                    title: 'Curved Sofa',
+                    category: 'Upholstery',
+                    requestType: 'Pricing Req',
+                    description: 'Modern curved sofa for reception area',
+                    quantity: 2,
+                    dimensions: { w: 240, d: 100, h: 85, unit: 'cm' },
+                    status: 'Pricing Req'
+                },
+                '1027': {
+                    id: '1027',
+                    title: 'Dining Chair',
+                    category: 'Casegoods',
+                    requestType: 'Awaiting Bid',
+                    description: 'Contemporary dining chair with upholstered seat',
+                    quantity: 8,
+                    dimensions: { w: 50, d: 55, h: 95, unit: 'cm' },
+                    status: 'Awaiting Bid'
+                },
+                '1031': {
+                    id: '1031',
+                    title: 'Banquette',
+                    category: 'Upholstery',
+                    requestType: 'Bid Submitted',
+                    description: 'Custom banquette seating for dining area',
+                    quantity: 1,
+                    dimensions: { w: 300, d: 60, h: 90, unit: 'cm' },
+                    status: 'Bid Submitted'
+                }
+            };
+            
+            function openBidModal(itemId) {
+                var item = demoItems[itemId];
+                if (!item) return;
+                
+                var modal = document.getElementById('n88-supplier-bid-modal');
+                var modalContent = document.getElementById('n88-supplier-bid-modal-content');
+                
+                if (!modal || !modalContent) return;
+                
+                // Build modal HTML - Supplier Bid Modal (matching wireframe exactly)
+                var modalHTML = '<div style="padding: 20px; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center; background-color: #fff;">' +
+                    '<h2 style="margin: 0; font-size: 20px; font-weight: 600; color: #333;">Item #' + item.id + ' <span style="color: #666; font-weight: 400;">(Supplier View)</span></h2>' +
+                    '<button onclick="closeBidModal()" style="background: none; border: none; font-size: 28px; cursor: pointer; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; color: #666; line-height: 1;">×</button>' +
+                    '</div>' +
+                    '<div style="flex: 1; overflow-y: auto; padding: 0; background-color: #fff;">' +
+                    '<div style="padding: 20px;">' +
+                    // READ-ONLY PLACEHOLDER text
+                    '<div style="margin-bottom: 24px; padding: 12px; background-color: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">' +
+                    '<div style="font-size: 13px; color: #856404; font-weight: 500;">READ-ONLY PLACEHOLDER <span style="color: #ff6600;">(Phase 2.2.x)</span></div>' +
+                    '</div>' +
+                    // Item Title
+                    '<div style="margin-bottom: 16px;">' +
+                    '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #666;">Item Title:</label>' +
+                    '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #333;">' + item.title + '</div>' +
+                    '</div>' +
+                    // Category
+                    '<div style="margin-bottom: 16px;">' +
+                    '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #666;">Category:</label>' +
+                    '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #333;">' + item.category + '</div>' +
+                    '</div>' +
+                    // Status/Queue
+                    '<div style="margin-bottom: 24px;">' +
+                    '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #666;">Status/Queue:</label>' +
+                    '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #333;">' + item.requestType + '</div>' +
+                    '</div>' +
+                    // Specs (if available)
+                    '<div style="margin-bottom: 24px;">' +
+                    '<h3 style="font-size: 14px; font-weight: 600; margin-bottom: 16px; color: #333; border-bottom: 1px solid #e0e0e0; padding-bottom: 8px;">Specs (if available)</h3>' +
+                    '<div style="margin-bottom: 12px;">' +
+                    '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #666;">Qty:</label>' +
+                    '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #999;">—</div>' +
+                    '</div>' +
+                    '<div style="margin-bottom: 12px;">' +
+                    '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #666;">Dims:</label>' +
+                    '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #999;">W— D— H— Unit: —</div>' +
+                    '</div>' +
+                    '<div style="margin-bottom: 12px;">' +
+                    '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #666;">CBM:</label>' +
+                    '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #999;">—</div>' +
+                    '</div>' +
+                    '<div style="margin-bottom: 12px;">' +
+                    '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #666;">sourcing_type:</label>' +
+                    '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #999;">—</div>' +
+                    '</div>' +
+                    '<div style="margin-bottom: 12px;">' +
+                    '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #666;">timeline_type:</label>' +
+                    '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #999;">—</div>' +
+                    '</div>' +
+                    '</div>' +
+                    // Notes/Description
+                    '<div style="margin-bottom: 24px;">' +
+                    '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #666;">Notes/Description:</label>' +
+                    '<div style="padding: 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; min-height: 100px; color: #999; display: flex; align-items: center; justify-content: center;">[ ]</div>' +
+                    '</div>' +
+                    // References
+                    '<div style="margin-bottom: 24px;">' +
+                    '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #666;">References (thumbs if exist):</label>' +
+                    '<div style="display: flex; gap: 12px; flex-wrap: wrap;">' +
+                    '<div style="width: 100px; height: 100px; background-color: #f0f0f0; border: 2px dashed #ccc; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #999; font-size: 12px;">[thumb]</div>' +
+                    '<div style="width: 100px; height: 100px; background-color: #f0f0f0; border: 2px dashed #ccc; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #999; font-size: 12px;">[thumb]</div>' +
+                    '</div>' +
+                    '</div>' +
+                    '</div>' +
+                    // Footer
+                    '<div style="padding: 20px; border-top: 1px solid #e0e0e0; background-color: #fff;">' +
+                    '<div style="font-size: 12px; color: #999; font-style: italic; text-align: center;">(No bid UI. No prototype UI. No uploads.)</div>' +
+                    '</div>';
+                
+                modalContent.innerHTML = modalHTML;
+                modal.style.display = 'block';
+                document.body.style.overflow = 'hidden';
+            }
+            
+            function closeBidModal() {
+                var modal = document.getElementById('n88-supplier-bid-modal');
+                if (modal) {
+                    modal.style.display = 'none';
+                    document.body.style.overflow = '';
+                }
+            }
+            
+            // Attach event listeners
+            document.addEventListener('DOMContentLoaded', function() {
+                document.querySelectorAll('.n88-open-bid-modal').forEach(function(button) {
+                    button.addEventListener('click', function() {
+                        var itemId = this.getAttribute('data-item-id');
+                        openBidModal(itemId);
+                    });
+                });
+                
+                // Close modal on backdrop click
+                var modal = document.getElementById('n88-supplier-bid-modal');
+                if (modal) {
+                    modal.addEventListener('click', function(e) {
+                        if (e.target === modal) {
+                            closeBidModal();
+                        }
+                    });
+                }
+            });
+            
+            // Expose to global scope
+            window.openBidModal = openBidModal;
+            window.closeBidModal = closeBidModal;
+        })();
+        </script>
         <?php
         return ob_get_clean();
     }
@@ -995,12 +1270,321 @@ class N88_RFQ_Auth {
 
         ob_start();
         ?>
-        <div class="n88-admin-queue" style="max-width: 1200px; margin: 50px auto; padding: 20px;">
-            <h1>Admin Queue</h1>
-            <p>Scope: <?php echo esc_html( $scope ); ?></p>
-            <p>This is the admin queue page. (Stub - to be implemented in later commits)</p>
-            <p>User: <?php echo esc_html( $current_user->display_name ); ?> (<?php echo esc_html( implode( ', ', $current_user->roles ) ); ?>)</p>
+        <div class="n88-admin-queue" style="max-width: 1400px; margin: 0 auto; padding: 40px 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;">
+            <!-- Header -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; padding-bottom: 15px; border-bottom: 2px solid #e0e0e0;">
+                <h1 style="margin: 0; font-size: 24px; font-weight: 600; color: #333;">NorthEightyEight — Admin Assembly Line</h1>
+                <div style="font-size: 14px; color: #666;">
+                    Logged in: <?php echo esc_html( $current_user->display_name ); ?>
+                </div>
+            </div>
+            
+            <!-- Filters Section -->
+            <div style="margin-bottom: 30px; padding: 20px; background-color: #f9f9f9; border-radius: 4px;">
+                <div style="font-size: 14px; font-weight: 600; margin-bottom: 15px; color: #333;">Filters:</div>
+                <div style="display: flex; align-items: center; gap: 20px; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <label style="font-size: 14px; color: #666;">Queue Type</label>
+                        <select style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; background-color: #fff; cursor: pointer; min-width: 120px;">
+                            <option value="pricing" selected>Pricing</option>
+                            <option value="prototype">Prototype</option>
+                            <option value="shipping">Shipping</option>
+                            <option value="all">All</option>
+                        </select>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <label style="font-size: 14px; color: #666;">Status</label>
+                        <select style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; background-color: #fff; cursor: pointer; min-width: 120px;">
+                            <option value="all" selected>All</option>
+                            <option value="pending">Pending</option>
+                            <option value="assigned">Assigned</option>
+                            <option value="in_progress">In Progress</option>
+                            <option value="completed">Completed</option>
+                        </select>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <label style="font-size: 14px; color: #666;">Supplier</label>
+                        <select style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; background-color: #fff; cursor: pointer; min-width: 120px;">
+                            <option value="all" selected>All</option>
+                            <option value="supplier_x">Supplier X</option>
+                            <option value="supplier_y">Supplier Y</option>
+                            <option value="unassigned">Unassigned</option>
+                        </select>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <label style="font-size: 14px; color: #666;">Designer</label>
+                        <select style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; background-color: #fff; cursor: pointer; min-width: 120px;">
+                            <option value="all" selected>All</option>
+                            <option value="sarah">Sarah (Firm A)</option>
+                            <option value="vikram">Vikram (Firm B)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Queue Heading -->
+            <div style="margin-bottom: 20px;">
+                <h2 style="margin: 0; font-size: 18px; font-weight: 600; color: #333;">Global Item Queue (item-centric)</h2>
+            </div>
+            
+            <!-- Items Table -->
+            <div style="background-color: #fff; border: 1px solid #e0e0e0; border-radius: 4px; overflow: hidden; margin-bottom: 20px;">
+                <table style="width: 100%; border-collapse: collapse;">
+                    <thead>
+                        <tr style="background-color: #f5f5f5; border-bottom: 2px solid #e0e0e0;">
+                            <th style="padding: 15px; text-align: left; font-size: 14px; font-weight: 600; color: #333; border-right: 1px solid #e0e0e0;">Item</th>
+                            <th style="padding: 15px; text-align: left; font-size: 14px; font-weight: 600; color: #333; border-right: 1px solid #e0e0e0;">Item Title</th>
+                            <th style="padding: 15px; text-align: left; font-size: 14px; font-weight: 600; color: #333; border-right: 1px solid #e0e0e0;">Request Type</th>
+                            <th style="padding: 15px; text-align: left; font-size: 14px; font-weight: 600; color: #333; border-right: 1px solid #e0e0e0;">Designer</th>
+                            <th style="padding: 15px; text-align: left; font-size: 14px; font-weight: 600; color: #333; border-right: 1px solid #e0e0e0;">Supplier</th>
+                            <th style="padding: 15px; text-align: left; font-size: 14px; font-weight: 600; color: #333;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Demo data from wireframe -->
+                        <tr style="border-bottom: 1px solid #e0e0e0;">
+                            <td style="padding: 15px; font-size: 14px; color: #ff6600; font-weight: 500;">#1023</td>
+                            <td style="padding: 15px; font-size: 14px; color: #333;">Curved Sofa</td>
+                            <td style="padding: 15px; font-size: 14px; color: #666;">Pricing Req</td>
+                            <td style="padding: 15px; font-size: 14px; color: #666;">Sarah (Firm A)</td>
+                            <td style="padding: 15px; font-size: 14px; color: #999;">(Unassigned)</td>
+                            <td style="padding: 15px;">
+                                <button class="n88-open-admin-modal" data-item-id="1023" data-item-title="Curved Sofa" data-request-type="Pricing Req" data-supplier="Unassigned" style="padding: 6px 12px; background-color: #0073aa; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 500;">
+                                    Open ►
+                                </button>
+                            </td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid #e0e0e0;">
+                            <td style="padding: 15px; font-size: 14px; color: #ff6600; font-weight: 500;">#1027</td>
+                            <td style="padding: 15px; font-size: 14px; color: #333;">Dining Chair</td>
+                            <td style="padding: 15px; font-size: 14px; color: #666;">Pricing Req</td>
+                            <td style="padding: 15px; font-size: 14px; color: #666;">Sarah (Firm A)</td>
+                            <td style="padding: 15px; font-size: 14px; color: #666;">Supplier X</td>
+                            <td style="padding: 15px;">
+                                <button class="n88-open-admin-modal" data-item-id="1027" data-item-title="Dining Chair" data-request-type="Pricing Req" data-supplier="Supplier X" style="padding: 6px 12px; background-color: #0073aa; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 500;">
+                                    Open ►
+                                </button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 15px; font-size: 14px; color: #ff6600; font-weight: 500;">#1031</td>
+                            <td style="padding: 15px; font-size: 14px; color: #333;">Banquette</td>
+                            <td style="padding: 15px; font-size: 14px; color: #666;">Prototype</td>
+                            <td style="padding: 15px; font-size: 14px; color: #666;">Vikram (Firm B)</td>
+                            <td style="padding: 15px; font-size: 14px; color: #666;">Supplier X</td>
+                            <td style="padding: 15px;">
+                                <button class="n88-open-admin-modal" data-item-id="1031" data-item-title="Banquette" data-request-type="Prototype" data-supplier="Supplier X" style="padding: 6px 12px; background-color: #0073aa; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 500;">
+                                    Open ►
+                                </button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Action Bar -->
+            <div style="padding: 15px; background-color: #f9f9f9; border-radius: 4px; border-left: 4px solid #0073aa;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <span style="font-size: 14px; font-weight: 600; color: #333;">Action:</span>
+                    <select class="n88-admin-action-select" style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; background-color: #fff; cursor: pointer; min-width: 150px;">
+                        <option value="open" selected>Open</option>
+                        <option value="assign">Assign Supplier</option>
+                        <option value="reject">Reject</option>
+                    </select>
+                    <span style="font-size: 12px; color: #666; font-style: italic;">(opens drawer; does not navigate away!)</span>
+                </div>
+            </div>
         </div>
+        
+        <!-- Admin Queue Modal -->
+        <div id="n88-admin-queue-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.5); z-index: 10000; overflow: hidden;">
+            <div id="n88-admin-queue-modal-content" style="position: fixed; top: 0; right: 0; width: 480px; max-width: 90vw; height: 100vh; background-color: #fff; box-shadow: -2px 0 10px rgba(0,0,0,0.2); z-index: 10001; display: flex; flex-direction: column; overflow: hidden;">
+                <!-- Modal content will be populated by JavaScript -->
+            </div>
+        </div>
+        
+        <script>
+        (function() {
+            // Demo item data for admin queue
+            var adminItems = {
+                '1023': {
+                    id: '1023',
+                    title: 'Curved Sofa',
+                    category: 'Upholstery',
+                    requestType: 'Pricing Request',
+                    supplier: 'Unassigned',
+                    quantity: '--',
+                    dims: { w: '--', d: '--', h: '--', unit: '--' },
+                    normalized: { w: '--', d: '--', h: '--' },
+                    cbm: '----',
+                    sourcing_type: '--------',
+                    timeline_type: '--------'
+                },
+                '1027': {
+                    id: '1027',
+                    title: 'Dining Chair',
+                    category: 'Casegoods',
+                    requestType: 'Pricing Request',
+                    supplier: 'Supplier X',
+                    quantity: '--',
+                    dims: { w: '--', d: '--', h: '--', unit: '--' },
+                    normalized: { w: '--', d: '--', h: '--' },
+                    cbm: '----',
+                    sourcing_type: '--------',
+                    timeline_type: '--------'
+                },
+                '1031': {
+                    id: '1031',
+                    title: 'Banquette',
+                    category: 'Upholstery',
+                    requestType: 'Prototype',
+                    supplier: 'Supplier X',
+                    quantity: '--',
+                    dims: { w: '--', d: '--', h: '--', unit: '--' },
+                    normalized: { w: '--', d: '--', h: '--' },
+                    cbm: '----',
+                    sourcing_type: '--------',
+                    timeline_type: '--------'
+                }
+            };
+            
+            function openAdminModal(itemId) {
+                var item = adminItems[itemId];
+                if (!item) {
+                    // Try to get data from button attributes
+                    var button = document.querySelector('.n88-open-admin-modal[data-item-id="' + itemId + '"]');
+                    if (button) {
+                        item = {
+                            id: itemId,
+                            title: button.getAttribute('data-item-title') || 'Item',
+                            requestType: button.getAttribute('data-request-type') || 'Pricing Request',
+                            supplier: button.getAttribute('data-supplier') || 'Unassigned',
+                            quantity: '--',
+                            dims: { w: '--', d: '--', h: '--', unit: '--' },
+                            normalized: { w: '--', d: '--', h: '--' },
+                            cbm: '----',
+                            sourcing_type: '--------',
+                            timeline_type: '--------'
+                        };
+                    } else {
+                        return;
+                    }
+                }
+                
+                var modal = document.getElementById('n88-admin-queue-modal');
+                var modalContent = document.getElementById('n88-admin-queue-modal-content');
+                
+                if (!modal || !modalContent) return;
+                
+                // Build modal HTML - Admin Queue Modal (matching wireframe exactly)
+                var modalHTML = '<div style="padding: 20px; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center; background-color: #fff;">' +
+                    '<h2 style="margin: 0; font-size: 20px; font-weight: 600; color: #333;">Item #' + item.id + ' <span style="color: #666; font-weight: 400;">(Operator View)</span></h2>' +
+                    '<button onclick="closeAdminModal()" style="background: none; border: none; font-size: 28px; cursor: pointer; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; color: #666; line-height: 1;">×</button>' +
+                    '</div>' +
+                    '<div style="flex: 1; overflow-y: auto; padding: 0; background-color: #fff;">' +
+                    '<div style="padding: 20px;">' +
+                    // READ-ONLY PLACEHOLDER text
+                    '<div style="margin-bottom: 24px; padding: 12px; background-color: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">' +
+                    '<div style="font-size: 13px; color: #856404; font-weight: 500;">READ-ONLY PLACEHOLDER <span style="color: #ff6600;">(Phase 2.2.x)</span></div>' +
+                    '</div>' +
+                    // Supplier
+                    '<div style="margin-bottom: 16px;">' +
+                    '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #666;">Supplier:</label>' +
+                    '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #333;">' + item.supplier + '</div>' +
+                    '</div>' +
+                    // Queue Type
+                    '<div style="margin-bottom: 24px;">' +
+                    '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #666;">Queue Type:</label>' +
+                    '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #333;">' + item.requestType + '</div>' +
+                    '</div>' +
+                    // Item Facts (read-only)
+                    '<div style="margin-bottom: 24px;">' +
+                    '<h3 style="font-size: 14px; font-weight: 600; margin-bottom: 16px; color: #333; border-bottom: 1px solid #e0e0e0; padding-bottom: 8px;">Item Facts (read-only)</h3>' +
+                    '<div style="margin-bottom: 12px;">' +
+                    '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #666;">Title:</label>' +
+                    '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #333;">' + item.title + '</div>' +
+                    '</div>' +
+                    '<div style="margin-bottom: 12px;">' +
+                    '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #666;">Category:</label>' +
+                    '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #333;">' + (item.category || 'Upholstery') + '</div>' +
+                    '</div>' +
+                    '<div style="margin-bottom: 12px;">' +
+                    '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #666;">Qty:</label>' +
+                    '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #999;">' + item.quantity + '</div>' +
+                    '</div>' +
+                    '<div style="margin-bottom: 12px;">' +
+                    '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #666;">Dims:</label>' +
+                    '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #999;">W' + item.dims.w + ' D' + item.dims.d + ' H' + item.dims.h + ' Unit: ' + item.dims.unit + '</div>' +
+                    '</div>' +
+                    '<div style="margin-bottom: 12px;">' +
+                    '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #666;">Normalized (cm):</label>' +
+                    '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #999;">W' + item.normalized.w + ' D' + item.normalized.d + ' H' + item.normalized.h + '</div>' +
+                    '</div>' +
+                    '<div style="margin-bottom: 12px;">' +
+                    '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #666;">CBM:</label>' +
+                    '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #999;">' + item.cbm + '</div>' +
+                    '</div>' +
+                    '<div style="margin-bottom: 12px;">' +
+                    '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #666;">sourcing_type:</label>' +
+                    '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #999;">' + item.sourcing_type + '</div>' +
+                    '</div>' +
+                    '<div style="margin-bottom: 12px;">' +
+                    '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #666;">timeline_type:</label>' +
+                    '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #999;">' + item.timeline_type + '</div>' +
+                    '</div>' +
+                    '</div>' +
+                    // References
+                    '<div style="margin-bottom: 24px;">' +
+                    '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #666;">References (thumbs if exist):</label>' +
+                    '<div style="display: flex; gap: 12px; flex-wrap: wrap;">' +
+                    '<div style="width: 100px; height: 100px; background-color: #f0f0f0; border: 2px dashed #ccc; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #999; font-size: 12px;">[thumb]</div>' +
+                    '<div style="width: 100px; height: 100px; background-color: #f0f0f0; border: 2px dashed #ccc; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #999; font-size: 12px;">[thumb]</div>' +
+                    '</div>' +
+                    '</div>' +
+                    '</div>' +
+                    // Footer
+                    '<div style="padding: 20px; border-top: 1px solid #e0e0e0; background-color: #fff;">' +
+                    '<div style="font-size: 12px; color: #999; font-style: italic; text-align: center;">(No bids UI. No prototype payments UI.)</div>' +
+                    '</div>';
+                
+                modalContent.innerHTML = modalHTML;
+                modal.style.display = 'block';
+                document.body.style.overflow = 'hidden';
+            }
+            
+            function closeAdminModal() {
+                var modal = document.getElementById('n88-admin-queue-modal');
+                if (modal) {
+                    modal.style.display = 'none';
+                    document.body.style.overflow = '';
+                }
+            }
+            
+            // Attach event listeners
+            document.addEventListener('DOMContentLoaded', function() {
+                document.querySelectorAll('.n88-open-admin-modal').forEach(function(button) {
+                    button.addEventListener('click', function() {
+                        var itemId = this.getAttribute('data-item-id');
+                        openAdminModal(itemId);
+                    });
+                });
+                
+                // Close modal on backdrop click
+                var modal = document.getElementById('n88-admin-queue-modal');
+                if (modal) {
+                    modal.addEventListener('click', function(e) {
+                        if (e.target === modal) {
+                            closeAdminModal();
+                        }
+                    });
+                }
+            });
+            
+            // Expose to global scope
+            window.openAdminModal = openAdminModal;
+            window.closeAdminModal = closeAdminModal;
+        })();
+        </script>
         <?php
         return ob_get_clean();
     }
