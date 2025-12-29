@@ -1093,3 +1093,4 @@ class N88_RFQ_Installer {
         return $result === $table_name;
     }
 }
+// .....

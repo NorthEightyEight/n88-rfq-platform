@@ -235,6 +235,13 @@ class N88_RFQ_Auth {
                 
                 const formData = new FormData(form);
                 formData.append('action', 'n88_register_user');
+                
+                // Debug: Check if nonce is included
+                if (!formData.has('n88_signup_nonce')) {
+                    console.error('N88 RFQ: Nonce field missing from form data');
+                    alert('Form error: Security token missing. Please refresh the page and try again.');
+                    return;
+                }
 
                 const submitBtn = form.querySelector('.n88-auth-submit');
                 const originalText = submitBtn.textContent;
@@ -370,6 +377,13 @@ class N88_RFQ_Auth {
                 
                 const formData = new FormData(form);
                 formData.append('action', 'n88_login_user');
+                
+                // Debug: Check if nonce is included
+                if (!formData.has('n88_login_nonce')) {
+                    console.error('N88 RFQ: Nonce field missing from form data');
+                    alert('Form error: Security token missing. Please refresh the page and try again.');
+                    return;
+                }
 
                 const submitBtn = form.querySelector('.n88-auth-submit');
                 const originalText = submitBtn.textContent;
@@ -407,9 +421,16 @@ class N88_RFQ_Auth {
      * AJAX handler for user registration
      */
     public function ajax_register_user() {
-        // Verify nonce (use check_ajax_referer for better compatibility with public endpoints)
-        if ( ! check_ajax_referer( 'n88_register_user', 'n88_signup_nonce', false ) ) {
-            wp_send_json_error( array( 'message' => 'Security check failed. Please refresh and try again.' ) );
+        // Verify nonce - check both POST and GET
+        $nonce = isset( $_POST['n88_signup_nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['n88_signup_nonce'] ) ) : '';
+        
+        if ( empty( $nonce ) || ! wp_verify_nonce( $nonce, 'n88_register_user' ) ) {
+            // Log for debugging
+            error_log( 'N88 RFQ: Registration nonce verification failed. Nonce: ' . ( empty( $nonce ) ? 'empty' : 'present' ) );
+            wp_send_json_error( array( 
+                'message' => 'Security check failed. Please refresh the page and try again.',
+                'debug' => defined( 'WP_DEBUG' ) && WP_DEBUG ? 'Nonce verification failed' : ''
+            ) );
         }
 
         // Get and sanitize form data
@@ -488,9 +509,16 @@ class N88_RFQ_Auth {
      * AJAX handler for user login
      */
     public function ajax_login_user() {
-        // Verify nonce (use check_ajax_referer for better compatibility with public endpoints)
-        if ( ! check_ajax_referer( 'n88_login_user', 'n88_login_nonce', false ) ) {
-            wp_send_json_error( array( 'message' => 'Security check failed. Please refresh and try again.' ) );
+        // Verify nonce - check both POST and GET
+        $nonce = isset( $_POST['n88_login_nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['n88_login_nonce'] ) ) : '';
+        
+        if ( empty( $nonce ) || ! wp_verify_nonce( $nonce, 'n88_login_user' ) ) {
+            // Log for debugging
+            error_log( 'N88 RFQ: Login nonce verification failed. Nonce: ' . ( empty( $nonce ) ? 'empty' : 'present' ) );
+            wp_send_json_error( array( 
+                'message' => 'Security check failed. Please refresh the page and try again.',
+                'debug' => defined( 'WP_DEBUG' ) && WP_DEBUG ? 'Nonce verification failed' : ''
+            ) );
         }
 
         $username = isset( $_POST['username'] ) ? sanitize_text_field( wp_unslash( $_POST['username'] ) ) : '';
@@ -1168,3 +1196,4 @@ class N88_RFQ_Auth {
     }
 }
 
+// .....
