@@ -23,6 +23,9 @@ class N88_RFQ_Auth {
         
         // Commit 2.2.7: Supplier onboarding
         add_shortcode( 'n88_supplier_onboarding', array( $this, 'render_supplier_onboarding' ) );
+        
+        // Commit 2.2.8: Designer onboarding
+        add_shortcode( 'n88_designer_onboarding', array( $this, 'render_designer_onboarding' ) );
 
         // AJAX handlers
         add_action( 'wp_ajax_n88_register_user', array( $this, 'ajax_register_user' ) );
@@ -35,6 +38,9 @@ class N88_RFQ_Auth {
         
         // Commit 2.2.7: AJAX handler to fetch keywords by category
         add_action( 'wp_ajax_n88_get_keywords_by_category', array( $this, 'ajax_get_keywords_by_category' ) );
+        
+        // Commit 2.2.8: Designer profile save handler
+        add_action( 'wp_ajax_n88_save_designer_profile', array( $this, 'ajax_save_designer_profile' ) );
 
         // Create custom roles on activation
         add_action( 'init', array( $this, 'create_custom_roles' ) );
@@ -625,6 +631,25 @@ class N88_RFQ_Auth {
         }
         
         if ( in_array( 'n88_designer', $user->roles, true ) || in_array( 'designer', $user->roles, true ) ) {
+            // Commit 2.2.8: Check if designer profile is incomplete
+            global $wpdb;
+            $designer_profiles_table = $wpdb->prefix . 'n88_designer_profiles_v2';
+            
+            // Check if profile exists - use COUNT for more reliable check
+            // Suppress errors in case table doesn't exist yet
+            $wpdb->suppress_errors( true );
+            $profile_count = $wpdb->get_var( $wpdb->prepare(
+                "SELECT COUNT(*) FROM {$designer_profiles_table} WHERE designer_id = %d",
+                $user->ID
+            ) );
+            $wpdb->suppress_errors( false );
+            
+            // If profile doesn't exist (count is false, null, or 0), redirect to onboarding
+            if ( $profile_count === false || $profile_count === null || (int) $profile_count === 0 ) {
+                return home_url( '/designer/onboarding' );
+            }
+            
+            // Otherwise, redirect to workspace
             return home_url( '/workspace' );
         }
 
@@ -2410,10 +2435,376 @@ class N88_RFQ_Auth {
         }
         
         if ( in_array( 'n88_designer', $user->roles, true ) || in_array( 'designer', $user->roles, true ) ) {
+            // Commit 2.2.8: Check if designer profile is incomplete
+            global $wpdb;
+            $designer_profiles_table = $wpdb->prefix . 'n88_designer_profiles_v2';
+            
+            // Check if profile exists - use COUNT for more reliable check
+            // Suppress errors in case table doesn't exist yet
+            $wpdb->suppress_errors( true );
+            $profile_count = $wpdb->get_var( $wpdb->prepare(
+                "SELECT COUNT(*) FROM {$designer_profiles_table} WHERE designer_id = %d",
+                $user->ID
+            ) );
+            $wpdb->suppress_errors( false );
+            
+            // If profile doesn't exist (count is false, null, or 0), redirect to onboarding
+            if ( $profile_count === false || $profile_count === null || (int) $profile_count === 0 ) {
+                return home_url( '/designer/onboarding' );
+            }
+            
+            // Otherwise, redirect to workspace
             return home_url( '/workspace' );
         }
 
         return null;
+    }
+
+
+    /**
+     * Render designer onboarding form (Commit 2.2.8)
+     */
+    public function render_designer_onboarding( $atts = array() ) {
+        // Allow admins to edit pages even if they don't have designer role
+        if ( is_admin() && current_user_can( 'edit_pages' ) ) {
+            return '<p><em>Designer Onboarding page - This shortcode will display the designer onboarding form.</em></p>';
+        }
+
+        // Check if user is logged in and is a designer
+        if ( ! is_user_logged_in() ) {
+            wp_redirect( home_url( '/login/' ) );
+            exit;
+        }
+
+        $current_user = wp_get_current_user();
+        $is_designer = in_array( 'n88_designer', $current_user->roles, true ) || in_array( 'designer', $current_user->roles, true );
+        
+        if ( ! $is_designer ) {
+            wp_die( 'Access denied. Designer account required.', 'Access Denied', array( 'response' => 403 ) );
+        }
+
+        global $wpdb;
+        $designer_profiles_table = $wpdb->prefix . 'n88_designer_profiles_v2';
+        $designer_practice_map_table = $wpdb->prefix . 'n88_designer_practice_map';
+        $practice_types_table = $wpdb->prefix . 'n88_practice_types';
+        
+        // Check if profile exists and fetch existing data
+        $existing_profile = $wpdb->get_row( $wpdb->prepare(
+            "SELECT * FROM {$designer_profiles_table} WHERE designer_id = %d",
+            $current_user->ID
+        ) );
+
+        // Fetch existing selected practice types
+        $existing_practice_ids = array();
+        if ( $existing_profile ) {
+            $existing_practice_ids = $wpdb->get_col( $wpdb->prepare(
+                "SELECT practice_id FROM {$designer_practice_map_table} WHERE designer_id = %d",
+                $current_user->ID
+            ) );
+        }
+
+        // Fetch all practice types
+        $practice_types = $wpdb->get_results(
+            "SELECT practice_id, name FROM {$practice_types_table} ORDER BY name"
+        );
+
+        $is_edit_mode = ! empty( $existing_profile );
+        $form_title = $is_edit_mode ? 'Update Designer Profile' : 'Designer Onboarding';
+        $form_description = $is_edit_mode ? 'Update your profile information.' : 'Complete your profile to enable routing and matching.';
+
+        ob_start();
+        ?>
+        <div class="n88-designer-onboarding" style="max-width: 800px; margin: 40px auto; padding: 40px 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;">
+            <h1 style="margin: 0 0 30px 0; font-size: 28px; font-weight: 600; color: #333;"><?php echo esc_html( $form_title ); ?></h1>
+            <p style="margin: 0 0 30px 0; font-size: 14px; color: #666;"><?php echo esc_html( $form_description ); ?></p>
+            
+            <form id="n88-designer-onboarding-form" style="background-color: #fff; padding: 30px; border: 1px solid #e0e0e0; border-radius: 8px;">
+                <?php wp_nonce_field( 'n88_save_designer_profile', 'n88_designer_profile_nonce' ); ?>
+                
+                <!-- Firm Name -->
+                <div style="margin-bottom: 25px;">
+                    <label style="display: block; margin-bottom: 8px; font-size: 14px; font-weight: 600; color: #333;">
+                        Firm Name <span style="color: #d63638;">*</span>
+                    </label>
+                    <input type="text" id="n88-firm-name" name="firm_name" value="<?php echo $existing_profile ? esc_attr( $existing_profile->firm_name ) : ''; ?>" required style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                </div>
+
+                <!-- Display Nickname -->
+                <div style="margin-bottom: 25px;">
+                    <label style="display: block; margin-bottom: 8px; font-size: 14px; font-weight: 600; color: #333;">
+                        Display Nickname
+                    </label>
+                    <input type="text" id="n88-display-nickname" name="display_nickname" value="<?php echo $existing_profile ? esc_attr( $existing_profile->display_nickname ) : ''; ?>" style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                </div>
+
+                <!-- Contact Name -->
+                <div style="margin-bottom: 25px;">
+                    <label style="display: block; margin-bottom: 8px; font-size: 14px; font-weight: 600; color: #333;">
+                        Contact Name <span style="color: #d63638;">*</span>
+                    </label>
+                    <input type="text" id="n88-contact-name" name="contact_name" value="<?php echo $existing_profile ? esc_attr( $existing_profile->contact_name ) : ''; ?>" required style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                </div>
+
+                <!-- Email -->
+                <div style="margin-bottom: 25px;">
+                    <label style="display: block; margin-bottom: 8px; font-size: 14px; font-weight: 600; color: #333;">
+                        Email <span style="color: #d63638;">*</span>
+                    </label>
+                    <input type="email" id="n88-email" name="email" value="<?php echo $existing_profile ? esc_attr( $existing_profile->email ) : esc_attr( $current_user->user_email ); ?>" required style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                </div>
+
+                <!-- Address Fields -->
+                <div style="margin-bottom: 25px;">
+                    <label style="display: block; margin-bottom: 12px; font-size: 14px; font-weight: 600; color: #333;">
+                        Address
+                    </label>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                        <div>
+                            <label style="display: block; margin-bottom: 6px; font-size: 13px; color: #666;">Country Code (2 letters)</label>
+                            <input type="text" id="n88-country-code" name="country_code" value="<?php echo $existing_profile ? esc_attr( $existing_profile->country_code ) : ''; ?>" maxlength="2" placeholder="US" style="width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 6px; font-size: 13px; color: #666;">State/Region</label>
+                            <input type="text" id="n88-state-region" name="state_region" value="<?php echo $existing_profile ? esc_attr( $existing_profile->state_region ) : ''; ?>" style="width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                        <div>
+                            <label style="display: block; margin-bottom: 6px; font-size: 13px; color: #666;">City</label>
+                            <input type="text" id="n88-city" name="city" value="<?php echo $existing_profile ? esc_attr( $existing_profile->city ) : ''; ?>" style="width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 6px; font-size: 13px; color: #666;">Postal Code</label>
+                            <input type="text" id="n88-postal-code" name="postal_code" value="<?php echo $existing_profile ? esc_attr( $existing_profile->postal_code ) : ''; ?>" style="width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                        </div>
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 6px; font-size: 13px; color: #666;">Address Line 1</label>
+                        <input type="text" id="n88-address-line1" name="address_line1" value="<?php echo $existing_profile ? esc_attr( $existing_profile->address_line1 ) : ''; ?>" style="width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                    </div>
+                </div>
+
+                <!-- Practice Types -->
+                <div style="margin-bottom: 25px;">
+                    <label style="display: block; margin-bottom: 8px; font-size: 14px; font-weight: 600; color: #333;">
+                        Practice Types
+                    </label>
+                    <p style="margin: 0 0 12px 0; font-size: 13px; color: #666;">Select the practice types that apply to your firm.</p>
+                    <div style="display: flex; flex-wrap: wrap; gap: 12px; padding: 12px; border: 1px solid #ddd; border-radius: 4px; background-color: #f9f9f9;">
+                        <?php foreach ( $practice_types as $practice ) : ?>
+                            <label style="display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; background-color: #fff; border: 1px solid #ddd; border-radius: 20px; cursor: pointer; font-size: 14px;">
+                                <input type="checkbox" name="practice_types[]" value="<?php echo esc_attr( $practice->practice_id ); ?>" <?php checked( in_array( $practice->practice_id, $existing_practice_ids ) ); ?> style="width: 18px; height: 18px; cursor: pointer; margin: 0;">
+                                <span style="color: #333;"><?php echo esc_html( $practice->name ); ?></span>
+                            </label>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+
+                <!-- Default Allow System Invites -->
+                <div style="margin-bottom: 25px;">
+                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                        <input type="checkbox" id="n88-default-allow-system-invites" name="default_allow_system_invites" value="1" <?php checked( $existing_profile && $existing_profile->default_allow_system_invites == 1 ); ?> style="width: 18px; height: 18px; cursor: pointer;">
+                        <span style="font-size: 14px; color: #333;">Default Allow System Invites</span>
+                    </label>
+                </div>
+
+                <!-- Submit Button -->
+                <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0;">
+                    <button type="submit" id="n88-submit-designer-profile" style="padding: 12px 24px; background-color: #0073aa; color: #fff; border: none; border-radius: 4px; font-size: 14px; font-weight: 600; cursor: pointer; width: 100%;">
+                        Save Profile
+                    </button>
+                    <div id="n88-designer-form-message" style="margin-top: 15px; font-size: 14px; display: none;"></div>
+                </div>
+            </form>
+        </div>
+
+        <script>
+        (function() {
+            var form = document.getElementById('n88-designer-onboarding-form');
+            var submitButton = document.getElementById('n88-submit-designer-profile');
+            var messageDiv = document.getElementById('n88-designer-form-message');
+
+            // Handle form submission
+            form.addEventListener('submit', function(e) {
+                e.preventDefault();
+
+                var formData = new FormData(form);
+                formData.append('action', 'n88_save_designer_profile');
+
+                submitButton.disabled = true;
+                submitButton.textContent = 'Saving...';
+                messageDiv.style.display = 'none';
+
+                fetch('<?php echo admin_url( 'admin-ajax.php' ); ?>', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        messageDiv.style.cssText = 'margin-top: 15px; font-size: 14px; display: block; padding: 12px; background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; border-radius: 4px;';
+                        messageDiv.textContent = data.data.message || 'Profile saved successfully!';
+                        
+                        // Redirect after 2 seconds
+                        setTimeout(function() {
+                            window.location.href = '<?php echo esc_url( home_url( '/workspace' ) ); ?>';
+                        }, 2000);
+                    } else {
+                        messageDiv.style.cssText = 'margin-top: 15px; font-size: 14px; display: block; padding: 12px; background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; border-radius: 4px;';
+                        messageDiv.textContent = data.data.message || 'Error saving profile. Please try again.';
+                        submitButton.disabled = false;
+                        submitButton.textContent = 'Save Profile';
+                    }
+                })
+                .catch(error => {
+                    messageDiv.style.cssText = 'margin-top: 15px; font-size: 14px; display: block; padding: 12px; background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; border-radius: 4px;';
+                    messageDiv.textContent = 'Error saving profile. Please try again.';
+                    submitButton.disabled = false;
+                    submitButton.textContent = 'Save Profile';
+                });
+            });
+        })();
+        </script>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * AJAX handler to save designer profile (Commit 2.2.8)
+     */
+    public function ajax_save_designer_profile() {
+        check_ajax_referer( 'n88_save_designer_profile', 'n88_designer_profile_nonce' );
+
+        if ( ! is_user_logged_in() ) {
+            wp_send_json_error( array( 'message' => 'Authentication required.' ) );
+        }
+
+        $current_user = wp_get_current_user();
+        $is_designer = in_array( 'n88_designer', $current_user->roles, true ) || in_array( 'designer', $current_user->roles, true );
+        
+        if ( ! $is_designer ) {
+            wp_send_json_error( array( 'message' => 'Access denied. Designer account required.' ) );
+        }
+
+        $user_id = $current_user->ID;
+
+        // Get and sanitize form data
+        $firm_name = isset( $_POST['firm_name'] ) ? sanitize_text_field( wp_unslash( $_POST['firm_name'] ) ) : '';
+        $display_nickname = isset( $_POST['display_nickname'] ) ? sanitize_text_field( wp_unslash( $_POST['display_nickname'] ) ) : '';
+        $contact_name = isset( $_POST['contact_name'] ) ? sanitize_text_field( wp_unslash( $_POST['contact_name'] ) ) : '';
+        $email = isset( $_POST['email'] ) ? sanitize_email( wp_unslash( $_POST['email'] ) ) : '';
+        $country_code = isset( $_POST['country_code'] ) ? strtoupper( sanitize_text_field( wp_unslash( $_POST['country_code'] ) ) ) : '';
+        $state_region = isset( $_POST['state_region'] ) ? sanitize_text_field( wp_unslash( $_POST['state_region'] ) ) : '';
+        $city = isset( $_POST['city'] ) ? sanitize_text_field( wp_unslash( $_POST['city'] ) ) : '';
+        $postal_code = isset( $_POST['postal_code'] ) ? sanitize_text_field( wp_unslash( $_POST['postal_code'] ) ) : '';
+        $address_line1 = isset( $_POST['address_line1'] ) ? sanitize_text_field( wp_unslash( $_POST['address_line1'] ) ) : '';
+        $default_allow_system_invites = isset( $_POST['default_allow_system_invites'] ) ? 1 : 0;
+        $practice_types = isset( $_POST['practice_types'] ) ? array_map( 'intval', (array) $_POST['practice_types'] ) : array();
+
+        // Validate required fields
+        if ( empty( $firm_name ) ) {
+            wp_send_json_error( array( 'message' => 'Firm name is required.' ) );
+        }
+
+        if ( empty( $contact_name ) ) {
+            wp_send_json_error( array( 'message' => 'Contact name is required.' ) );
+        }
+
+        if ( empty( $email ) || ! is_email( $email ) ) {
+            wp_send_json_error( array( 'message' => 'Valid email is required.' ) );
+        }
+
+        global $wpdb;
+        $designer_profiles_table = $wpdb->prefix . 'n88_designer_profiles_v2';
+        $designer_practice_map_table = $wpdb->prefix . 'n88_designer_practice_map';
+        $practice_types_table = $wpdb->prefix . 'n88_practice_types';
+
+        // Verify practice types exist
+        if ( ! empty( $practice_types ) ) {
+            $placeholders = implode( ',', array_fill( 0, count( $practice_types ), '%d' ) );
+            $query = $wpdb->prepare(
+                "SELECT practice_id FROM {$practice_types_table} WHERE practice_id IN ($placeholders)",
+                $practice_types
+            );
+            $valid_practice_types = $wpdb->get_col( $query );
+            $practice_types = array_intersect( $practice_types, $valid_practice_types );
+        }
+
+        // Start transaction
+        $wpdb->query( 'START TRANSACTION' );
+
+        try {
+            // Save or update designer profile
+            $existing_profile = $wpdb->get_var( $wpdb->prepare(
+                "SELECT designer_id FROM {$designer_profiles_table} WHERE designer_id = %d",
+                $user_id
+            ) );
+
+            $profile_data = array(
+                'designer_id' => $user_id,
+                'firm_name' => $firm_name,
+                'display_nickname' => $display_nickname ? $display_nickname : null,
+                'contact_name' => $contact_name,
+                'email' => $email,
+                'country_code' => $country_code ? $country_code : null,
+                'state_region' => $state_region ? $state_region : null,
+                'city' => $city ? $city : null,
+                'postal_code' => $postal_code ? $postal_code : null,
+                'address_line1' => $address_line1 ? $address_line1 : null,
+                'default_allow_system_invites' => $default_allow_system_invites,
+            );
+
+            if ( $existing_profile ) {
+                // Update existing profile
+                $wpdb->update(
+                    $designer_profiles_table,
+                    $profile_data,
+                    array( 'designer_id' => $user_id ),
+                    array( '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d' ),
+                    array( '%d' )
+                );
+            } else {
+                // Insert new profile
+                $wpdb->insert(
+                    $designer_profiles_table,
+                    $profile_data,
+                    array( '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d' )
+                );
+            }
+
+            // Delete existing practice type mappings for this designer
+            $wpdb->delete(
+                $designer_practice_map_table,
+                array( 'designer_id' => $user_id ),
+                array( '%d' )
+            );
+
+            // Insert new practice type mappings
+            if ( ! empty( $practice_types ) ) {
+                foreach ( $practice_types as $practice_id ) {
+                    $wpdb->insert(
+                        $designer_practice_map_table,
+                        array(
+                            'designer_id' => $user_id,
+                            'practice_id' => $practice_id,
+                        ),
+                        array( '%d', '%d' )
+                    );
+                }
+            }
+
+            $wpdb->query( 'COMMIT' );
+
+            wp_send_json_success( array(
+                'message' => 'Profile saved successfully!',
+            ) );
+
+        } catch ( Exception $e ) {
+            $wpdb->query( 'ROLLBACK' );
+            wp_send_json_error( array(
+                'message' => 'Error saving profile. Please try again.',
+            ) );
+        }
     }
 }
 

@@ -234,6 +234,7 @@ class N88_RFQ_Installer {
         // For nested pages, try get_page_by_path first, then check by parent
         $supplier_queue_page = get_page_by_path( 'supplier/queue' );
         $supplier_onboarding_page = get_page_by_path( 'supplier/onboarding' );
+        $designer_onboarding_page = get_page_by_path( 'designer/onboarding' );
         $admin_queue_page = get_page_by_path( 'admin/queue' );
         
         // If get_page_by_path didn't work, try finding by parent and slug
@@ -263,6 +264,22 @@ class N88_RFQ_Installer {
                 foreach ( $pages as $page ) {
                     if ( $page->post_name === 'onboarding' ) {
                         $supplier_onboarding_page = $page;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if ( ! $designer_onboarding_page ) {
+            $designer_parent_check = get_page_by_path( 'designer' );
+            if ( $designer_parent_check ) {
+                $pages = get_pages( array(
+                    'post_status' => 'publish',
+                    'parent' => $designer_parent_check->ID,
+                ) );
+                foreach ( $pages as $page ) {
+                    if ( $page->post_name === 'onboarding' ) {
+                        $designer_onboarding_page = $page;
                         break;
                     }
                 }
@@ -388,6 +405,55 @@ class N88_RFQ_Installer {
                 ) );
             }
             update_option( 'n88_rfq_supplier_onboarding_page_id', $supplier_onboarding_page->ID );
+        }
+
+        // Create Designer parent page if it doesn't exist (Commit 2.2.8)
+        $designer_parent = get_page_by_path( 'designer' );
+        if ( ! $designer_parent ) {
+            $designer_parent_id = wp_insert_post( array(
+                'post_title'    => 'Designer',
+                'post_name'     => 'designer',
+                'post_content'  => '',
+                'post_status'   => 'publish',
+                'post_type'     => 'page',
+                'post_author'   => 1,
+            ) );
+
+            if ( is_wp_error( $designer_parent_id ) ) {
+                error_log( 'N88 RFQ: Failed to create designer parent page: ' . $designer_parent_id->get_error_message() );
+                $designer_parent_id = 0;
+            }
+        } else {
+            $designer_parent_id = $designer_parent->ID;
+        }
+
+        // Create Designer Onboarding page (Commit 2.2.8)
+        if ( ! $designer_onboarding_page ) {
+            $designer_onboarding_id = wp_insert_post( array(
+                'post_title'    => 'Designer Onboarding',
+                'post_name'     => 'onboarding',
+                'post_content'  => '[n88_designer_onboarding]',
+                'post_status'   => 'publish',
+                'post_type'     => 'page',
+                'post_author'   => 1,
+                'post_parent'   => $designer_parent_id > 0 ? $designer_parent_id : 0,
+            ) );
+
+            if ( is_wp_error( $designer_onboarding_id ) ) {
+                error_log( 'N88 RFQ: Failed to create designer onboarding page: ' . $designer_onboarding_id->get_error_message() );
+            } else {
+                update_option( 'n88_rfq_designer_onboarding_page_id', $designer_onboarding_id );
+            }
+        } else {
+            // Update existing page to ensure it has the shortcode
+            if ( strpos( $designer_onboarding_page->post_content, '[n88_designer_onboarding]' ) === false ) {
+                wp_update_post( array(
+                    'ID'           => $designer_onboarding_page->ID,
+                    'post_content' => '[n88_designer_onboarding]',
+                    'post_parent' => $designer_parent_id > 0 ? $designer_parent_id : $designer_onboarding_page->post_parent,
+                ) );
+            }
+            update_option( 'n88_rfq_designer_onboarding_page_id', $designer_onboarding_page->ID );
         }
 
         // Create Admin parent page if it doesn't exist
