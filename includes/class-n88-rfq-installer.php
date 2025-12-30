@@ -217,6 +217,10 @@ class N88_RFQ_Installer {
         self::create_phase_2_2_5_tables( $charset_collate );
         self::seed_keyword_library();
 
+        // Commit 2.2.6: Create practice types tables and seed practice types
+        self::create_phase_2_2_6_tables( $charset_collate );
+        self::seed_practice_types();
+
         self::maybe_upgrade();
     }
 
@@ -861,6 +865,10 @@ class N88_RFQ_Installer {
         // Commit 2.2.5: Ensure keyword tables exist and seed keyword library
         self::create_phase_2_2_5_tables( $charset_collate );
         self::seed_keyword_library();
+
+        // Commit 2.2.6: Ensure practice types tables exist and seed practice types
+        self::create_phase_2_2_6_tables( $charset_collate );
+        self::seed_practice_types();
 
         // Ensure core tables exist (handles upgrades where plugin wasn't reactivated)
         $table_schemas = array(
@@ -1591,6 +1599,116 @@ class N88_RFQ_Installer {
                         array( '%d', '%s', '%d', '%d' )
                     );
                 }
+            }
+        }
+    }
+
+    /**
+     * Create Phase 2.2.6 tables: Practice Types and Designer Practice Mapping (Commit 2.2.6)
+     * Data-only commit: No UI, routing, bidding, or Phase 2.3 logic
+     */
+    private static function create_phase_2_2_6_tables( $charset_collate ) {
+        global $wpdb;
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+
+        $practice_types_table = $wpdb->prefix . 'n88_practice_types';
+        $designer_practice_map_table = $wpdb->prefix . 'n88_designer_practice_map';
+        $users_table = $wpdb->users;
+
+        // 1. n88_practice_types (master practice types library)
+        $sql_practice_types = "CREATE TABLE {$practice_types_table} (
+            practice_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            name VARCHAR(255) NOT NULL,
+            PRIMARY KEY (practice_id),
+            UNIQUE KEY name (name)
+        ) {$charset_collate};";
+
+        // 2. n88_designer_practice_map (maps designers to practice types)
+        $sql_designer_practice_map = "CREATE TABLE {$designer_practice_map_table} (
+            designer_id INT UNSIGNED NOT NULL,
+            practice_id INT UNSIGNED NOT NULL,
+            PRIMARY KEY (designer_id, practice_id),
+            KEY designer_id (designer_id),
+            KEY practice_id (practice_id)
+        ) {$charset_collate};";
+
+        // Create tables using dbDelta
+        dbDelta( $sql_practice_types );
+        dbDelta( $sql_designer_practice_map );
+
+        // Add foreign key constraints separately
+        $practice_types_table_safe = preg_replace( '/[^a-zA-Z0-9_]/', '', $practice_types_table );
+        $designer_practice_map_table_safe = preg_replace( '/[^a-zA-Z0-9_]/', '', $designer_practice_map_table );
+        $users_table_safe = preg_replace( '/[^a-zA-Z0-9_]/', '', $users_table );
+
+        // Check if foreign keys exist before adding
+        $map_fks = $wpdb->get_results( "SHOW CREATE TABLE {$designer_practice_map_table_safe}" );
+
+        $map_has_fk_designer = false;
+        $map_has_fk_practice = false;
+
+        if ( ! empty( $map_fks ) ) {
+            $create_statement = $map_fks[0]->{'Create Table'};
+            $map_has_fk_designer = strpos( $create_statement, 'fk_practice_map_designer' ) !== false;
+            $map_has_fk_practice = strpos( $create_statement, 'fk_practice_map_practice' ) !== false;
+        }
+
+        // Add foreign key: designer_id -> wp_users.ID (map table)
+        if ( ! $map_has_fk_designer ) {
+            $wpdb->query( "ALTER TABLE {$designer_practice_map_table_safe} ADD CONSTRAINT fk_practice_map_designer FOREIGN KEY (designer_id) REFERENCES {$users_table_safe}(ID) ON DELETE CASCADE" );
+        }
+
+        // Add foreign key: practice_id -> n88_practice_types.practice_id (map table)
+        if ( ! $map_has_fk_practice ) {
+            $wpdb->query( "ALTER TABLE {$designer_practice_map_table_safe} ADD CONSTRAINT fk_practice_map_practice FOREIGN KEY (practice_id) REFERENCES {$practice_types_table_safe}(practice_id) ON DELETE CASCADE" );
+        }
+    }
+
+    /**
+     * Seed practice types library (Commit 2.2.6)
+     * Seeds practice types exactly as specified
+     * 
+     * IDEMPOTENT: This function is safe to run multiple times.
+     * - Checks for existing practice types before inserting (no duplicates)
+     * - No TRUNCATE, DELETE, or DROP operations
+     * - Only inserts missing records
+     */
+    private static function seed_practice_types() {
+        global $wpdb;
+
+        $practice_types_table = $wpdb->prefix . 'n88_practice_types';
+
+        // Practice types to seed (exactly as specified)
+        $practice_types = array(
+            'Hospitality',
+            'Luxury Residential',
+            'Multi-Family',
+            'Commercial',
+            'Office/Workplace',
+            'Retail',
+            'F&B/Restaurants',
+            'Healthcare',
+            'Other'
+        );
+
+        // Insert practice types, avoiding duplicates
+        // IDEMPOTENT: Checks for existing practice type by exact name match before inserting
+        foreach ( $practice_types as $practice_name ) {
+            // Check if practice type already exists
+            $existing = $wpdb->get_var( $wpdb->prepare(
+                "SELECT practice_id FROM {$practice_types_table} WHERE name = %s",
+                $practice_name
+            ) );
+
+            // Only insert if practice type doesn't exist (idempotent - safe to run multiple times)
+            if ( ! $existing ) {
+                $wpdb->insert(
+                    $practice_types_table,
+                    array(
+                        'name' => $practice_name,
+                    ),
+                    array( '%s' )
+                );
             }
         }
     }
