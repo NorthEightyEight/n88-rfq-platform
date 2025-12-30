@@ -1145,7 +1145,7 @@ class N88_RFQ_Installer {
             KEY is_active (is_active)
         ) {$charset_collate};";
 
-        // 3. n88_designer_profiles (without FK constraints - added separately)
+        // 3. n88_designer_profiles_v2 (without FK constraints - added separately)
         $sql_designer_profiles = "CREATE TABLE {$designer_profiles_table} (
             designer_id INT UNSIGNED NOT NULL,
             firm_name VARCHAR(255) NOT NULL,
