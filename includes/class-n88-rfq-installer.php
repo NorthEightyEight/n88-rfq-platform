@@ -1092,31 +1092,17 @@ class N88_RFQ_Installer {
      * Create Phase 2.2.2 tables: Supplier Profiles, Designer Profiles, Categories (Commit 2.2.2)
      * Data-only commit: No UI, routing, bidding, or Phase 2.3 logic
      * 
-     * Note: There is an existing n88_designer_profiles table from Phase 1.1 with different structure.
-     * This method creates the Phase 2.2.2 structure. If the old table exists, dbDelta will attempt
-     * to alter it, but the structures are incompatible. Migration should be handled separately if needed.
+     * Note: The Phase 2.2.2 designer profiles table is named n88_designer_profiles_v2 to avoid
+     * conflicts with the existing Phase 1.1 n88_designer_profiles table. Migration will be
+     * handled in a dedicated milestone.
      */
     private static function create_phase_2_2_2_tables( $charset_collate ) {
         global $wpdb;
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
         $supplier_profiles_table = $wpdb->prefix . 'n88_supplier_profiles';
-        $designer_profiles_table = $wpdb->prefix . 'n88_designer_profiles';
+        $designer_profiles_table = $wpdb->prefix . 'n88_designer_profiles_v2';
         $categories_table = $wpdb->prefix . 'n88_categories';
-        
-        // Check if old designer_profiles table exists (Phase 1.1 structure)
-        $old_designer_table_exists = self::table_exists( $designer_profiles_table );
-        if ( $old_designer_table_exists ) {
-            // Check if it has the old structure (has 'id' column) vs new structure (has 'designer_id' as PK)
-            $columns = $wpdb->get_col( "DESCRIBE {$designer_profiles_table}" );
-            $has_old_structure = in_array( 'id', $columns, true ) && ! in_array( 'designer_id', $columns, true );
-            
-            if ( $has_old_structure ) {
-                // Old Phase 1.1 table exists - we'll create the new structure
-                // dbDelta will attempt to alter, but structures are incompatible
-                // For now, we'll proceed - migration can be handled separately if needed
-            }
-        }
 
         // 1. n88_categories (must be created first due to FK dependency)
         $sql_categories = "CREATE TABLE {$categories_table} (
