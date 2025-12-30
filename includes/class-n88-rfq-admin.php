@@ -475,7 +475,7 @@ class N88_RFQ_Admin {
     }
 
     /**
-     * Render quotes manager page
+     * Render quotes manager page 
      */
     public function render_quotes_manager() {
         if ( ! $this->check_plugin_access() ) {

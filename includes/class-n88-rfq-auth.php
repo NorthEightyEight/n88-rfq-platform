@@ -875,7 +875,7 @@ class N88_RFQ_Auth {
     }
 
     /**
-     * Render designer dashboard
+     * Render designer dashboard 
      */
     public function render_designer_dashboard( $atts = array() ) {
         // Check if user is logged in
@@ -954,7 +954,7 @@ class N88_RFQ_Auth {
     }
 
     /**
-     * Render supplier queue page (Commit 2.2.1)
+     * Render supplier queue page (Commit 2.2.3)
      */
     public function render_supplier_queue( $atts = array() ) {
         // Allow admins to edit pages even if they don't have supplier role
@@ -1245,7 +1245,7 @@ class N88_RFQ_Auth {
     }
 
     /**
-     * Render admin queue page (Commit 2.2.1)
+     * Render admin queue page (Commit 2.2.3)
      */
     public function render_admin_queue( $atts = array() ) {
         // Allow admins to edit pages even if they don't have system operator role
