@@ -1327,6 +1327,12 @@ class N88_RFQ_Installer {
     /**
      * Seed keyword library with suggested keywords per SOT (Commit 2.2.5)
      * Seeds keywords exactly as specified, linked to correct categories
+     * 
+     * IDEMPOTENT: This function is safe to run multiple times.
+     * - Checks for existing categories before inserting (no duplicates)
+     * - Checks for existing keywords before inserting (no duplicates)
+     * - No TRUNCATE, DELETE, or DROP operations
+     * - Only inserts missing records
      */
     private static function seed_keyword_library() {
         global $wpdb;
@@ -1335,6 +1341,7 @@ class N88_RFQ_Installer {
         $keywords_table = $wpdb->prefix . 'n88_keywords';
 
         // First, ensure categories exist (create if they don't)
+        // IDEMPOTENT: Checks for existing category by exact name match before inserting
         $categories = array(
             'Upholstery',
             'Indoor Furniture (Casegoods)',
@@ -1558,17 +1565,20 @@ class N88_RFQ_Installer {
         );
 
         // Insert keywords, avoiding duplicates
+        // IDEMPOTENT: Checks for existing keyword by exact match (keyword + category_id) before inserting
+        // No TRUNCATE, DELETE, or overwrite operations - only inserts missing records
         foreach ( $keywords_by_category as $category_name => $keywords ) {
             $category_id = isset( $category_ids[ $category_name ] ) ? $category_ids[ $category_name ] : null;
 
             foreach ( $keywords as $keyword ) {
-                // Check if keyword already exists
+                // Check if keyword already exists (exact match on keyword text and category_id)
                 $existing = $wpdb->get_var( $wpdb->prepare(
                     "SELECT keyword_id FROM {$keywords_table} WHERE keyword = %s AND category_id = %d",
                     $keyword,
                     $category_id
                 ) );
 
+                // Only insert if keyword doesn't exist (idempotent - safe to run multiple times)
                 if ( ! $existing ) {
                     $wpdb->insert(
                         $keywords_table,
@@ -1583,6 +1593,47 @@ class N88_RFQ_Installer {
                 }
             }
         }
+    }
+
+    /**
+     * Verification query to check keyword counts per category (Commit 2.2.5)
+     * Run this query to verify category linkage is correct and no duplicate categories exist
+     * 
+     * SQL Query:
+     * SELECT 
+     *     c.category_id,
+     *     c.name AS category_name,
+     *     COUNT(k.keyword_id) AS keyword_count
+     * FROM {$wpdb->prefix}n88_categories c
+     * LEFT JOIN {$wpdb->prefix}n88_keywords k ON c.category_id = k.category_id
+     * WHERE c.is_active = 1
+     * GROUP BY c.category_id, c.name
+     * ORDER BY c.name;
+     * 
+     * Expected results:
+     * - 14 categories total
+     * - Each category should have the correct keyword count (see SOT)
+     * - No duplicate category names (case-sensitive check)
+     */
+    public static function verify_keyword_seeding() {
+        global $wpdb;
+        
+        $categories_table = $wpdb->prefix . 'n88_categories';
+        $keywords_table = $wpdb->prefix . 'n88_keywords';
+        
+        $results = $wpdb->get_results(
+            "SELECT 
+                c.category_id,
+                c.name AS category_name,
+                COUNT(k.keyword_id) AS keyword_count
+            FROM {$categories_table} c
+            LEFT JOIN {$keywords_table} k ON c.category_id = k.category_id AND k.is_active = 1
+            WHERE c.is_active = 1
+            GROUP BY c.category_id, c.name
+            ORDER BY c.name"
+        );
+        
+        return $results;
     }
 
     /**
