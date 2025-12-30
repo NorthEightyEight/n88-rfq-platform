@@ -15,17 +15,26 @@ class N88_RFQ_Auth {
         add_shortcode( 'n88_signup', array( $this, 'render_signup_form' ) );
         add_shortcode( 'n88_login', array( $this, 'render_login_form' ) );
         add_shortcode( 'n88_designer_dashboard', array( $this, 'render_designer_dashboard' ) );
-        
+
         // Commit 2.2.1: Register new route shortcodes
         add_shortcode( 'n88_workspace', array( $this, 'render_workspace' ) );
         add_shortcode( 'n88_supplier_queue', array( $this, 'render_supplier_queue' ) );
         add_shortcode( 'n88_admin_queue', array( $this, 'render_admin_queue' ) );
+        
+        // Commit 2.2.7: Supplier onboarding
+        add_shortcode( 'n88_supplier_onboarding', array( $this, 'render_supplier_onboarding' ) );
 
         // AJAX handlers
         add_action( 'wp_ajax_n88_register_user', array( $this, 'ajax_register_user' ) );
         add_action( 'wp_ajax_nopriv_n88_register_user', array( $this, 'ajax_register_user' ) );
         add_action( 'wp_ajax_n88_login_user', array( $this, 'ajax_login_user' ) );
         add_action( 'wp_ajax_nopriv_n88_login_user', array( $this, 'ajax_login_user' ) );
+
+        // Commit 2.2.7: Supplier profile save handler
+        add_action( 'wp_ajax_n88_save_supplier_profile', array( $this, 'ajax_save_supplier_profile' ) );
+        
+        // Commit 2.2.7: AJAX handler to fetch keywords by category
+        add_action( 'wp_ajax_n88_get_keywords_by_category', array( $this, 'ajax_get_keywords_by_category' ) );
 
         // Create custom roles on activation
         add_action( 'init', array( $this, 'create_custom_roles' ) );
@@ -60,18 +69,18 @@ class N88_RFQ_Auth {
     public function create_custom_roles() {
         // Create n88_designer role
         if ( ! get_role( 'n88_designer' ) ) {
-            add_role(
+        add_role(
                 'n88_designer',
-                __( 'Designer', 'n88-rfq' ),
-                array(
-                    'read' => true,
-                    'upload_files' => true,
+            __( 'Designer', 'n88-rfq' ),
+            array(
+                'read' => true,
+                'upload_files' => true,
                     // Legacy capabilities for backward compatibility
-                    'n88_access_boards' => true,
-                    'n88_access_items' => true,
-                    'n88_access_projects' => true,
-                )
-            );
+                'n88_access_boards' => true,
+                'n88_access_items' => true,
+                'n88_access_projects' => true,
+            )
+        );
         }
 
         // Create n88_supplier_admin role
@@ -585,7 +594,7 @@ class N88_RFQ_Auth {
     }
 
     /**
-     * Get redirect URL based on user role (Commit 2.2.1)
+     * Get redirect URL based on user role (Commit 2.2.1, updated 2.2.7)
      */
     private function get_role_redirect_url( $user ) {
         if ( ! $user || ! isset( $user->roles ) ) {
@@ -598,6 +607,20 @@ class N88_RFQ_Auth {
         }
         
         if ( in_array( 'n88_supplier_admin', $user->roles, true ) ) {
+            // Commit 2.2.7: Check if supplier profile is incomplete
+            global $wpdb;
+            $supplier_profiles_table = $wpdb->prefix . 'n88_supplier_profiles';
+            $profile_exists = $wpdb->get_var( $wpdb->prepare(
+                "SELECT supplier_id FROM {$supplier_profiles_table} WHERE supplier_id = %d",
+                $user->ID
+            ) );
+            
+            // If profile doesn't exist, redirect to onboarding
+            if ( ! $profile_exists ) {
+                return home_url( '/supplier/onboarding' );
+            }
+            
+            // Otherwise, redirect to queue
             return home_url( '/supplier/queue' );
         }
         
@@ -875,7 +898,7 @@ class N88_RFQ_Auth {
     }
 
     /**
-     * Render designer dashboard 
+     * Render designer dashboard
      */
     public function render_designer_dashboard( $atts = array() ) {
         // Check if user is logged in
@@ -1891,7 +1914,472 @@ class N88_RFQ_Auth {
     }
 
     /**
-     * Static version of get_role_redirect_url for use in error pages
+     * Render supplier onboarding form (Commit 2.2.7)
+     */
+    public function render_supplier_onboarding( $atts = array() ) {
+        // Allow admins to edit pages even if they don't have supplier role
+        if ( is_admin() && current_user_can( 'edit_pages' ) ) {
+            return '<p><em>Supplier Onboarding page - This shortcode will display the supplier onboarding form.</em></p>';
+        }
+
+        // Check if user is logged in and is a supplier admin
+        if ( ! is_user_logged_in() ) {
+            wp_redirect( home_url( '/login/' ) );
+            exit;
+        }
+
+        $current_user = wp_get_current_user();
+        $is_supplier = in_array( 'n88_supplier_admin', $current_user->roles, true );
+        
+        if ( ! $is_supplier ) {
+            wp_die( 'Access denied. Supplier Admin account required.', 'Access Denied', array( 'response' => 403 ) );
+        }
+
+        global $wpdb;
+        $categories_table = $wpdb->prefix . 'n88_categories';
+        $supplier_profiles_table = $wpdb->prefix . 'n88_supplier_profiles';
+        $supplier_keyword_map_table = $wpdb->prefix . 'n88_supplier_keyword_map';
+        
+        // Fetch active categories
+        $categories = $wpdb->get_results(
+            "SELECT category_id, name FROM {$categories_table} WHERE is_active = 1 ORDER BY name"
+        );
+
+        // Check if profile exists and fetch existing data (Commit 2.2.7)
+        $existing_profile = $wpdb->get_row( $wpdb->prepare(
+            "SELECT * FROM {$supplier_profiles_table} WHERE supplier_id = %d",
+            $current_user->ID
+        ) );
+
+        // Fetch existing selected keywords
+        $existing_keyword_ids = array();
+        if ( $existing_profile ) {
+            $existing_keyword_ids = $wpdb->get_col( $wpdb->prepare(
+                "SELECT keyword_id FROM {$supplier_keyword_map_table} WHERE supplier_id = %d",
+                $current_user->ID
+            ) );
+        }
+
+        $is_edit_mode = ! empty( $existing_profile );
+        $form_title = $is_edit_mode ? 'Update Supplier Profile' : 'Supplier Onboarding';
+        $form_description = $is_edit_mode ? 'Update your profile information.' : 'Complete your profile to enable routing and matching.';
+
+        ob_start();
+        ?>
+        <div class="n88-supplier-onboarding" style="max-width: 800px; margin: 40px auto; padding: 40px 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;">
+            <h1 style="margin: 0 0 30px 0; font-size: 28px; font-weight: 600; color: #333;"><?php echo esc_html( $form_title ); ?></h1>
+            <p style="margin: 0 0 30px 0; font-size: 14px; color: #666;"><?php echo esc_html( $form_description ); ?></p>
+            
+            <form id="n88-supplier-onboarding-form" style="background-color: #fff; padding: 30px; border: 1px solid #e0e0e0; border-radius: 8px;">
+                <?php wp_nonce_field( 'n88_save_supplier_profile', 'n88_supplier_profile_nonce' ); ?>
+                
+                <!-- Primary Category -->
+                <div style="margin-bottom: 25px;">
+                    <label style="display: block; margin-bottom: 8px; font-size: 14px; font-weight: 600; color: #333;">
+                        Primary Category <span style="color: #d63638;">*</span>
+                    </label>
+                    <select id="n88-primary-category" name="primary_category_id" required style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; background-color: #fff; cursor: pointer;">
+                        <option value="">Select a category...</option>
+                        <?php foreach ( $categories as $category ) : ?>
+                            <option value="<?php echo esc_attr( $category->category_id ); ?>" <?php selected( $existing_profile && $existing_profile->primary_category_id == $category->category_id ); ?>>
+                                <?php echo esc_html( $category->name ); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <!-- Suggested Keywords (filtered by category) -->
+                <div style="margin-bottom: 25px;">
+                    <label style="display: block; margin-bottom: 8px; font-size: 14px; font-weight: 600; color: #333;">
+                        Suggested Keywords
+                    </label>
+                    <p style="margin: 0 0 12px 0; font-size: 13px; color: #666;">Select keywords that match your capabilities. Keywords are filtered by your selected category.</p>
+                    <div id="n88-keywords-container" style="display: flex; flex-wrap: wrap; gap: 8px; min-height: 40px; padding: 12px; border: 1px solid #ddd; border-radius: 4px; background-color: #f9f9f9;">
+                        <p style="margin: 0; color: #999; font-size: 13px; font-style: italic;">Select a category first to see keywords</p>
+                    </div>
+                </div>
+
+                <!-- Freeform Keywords -->
+                <div style="margin-bottom: 25px;">
+                    <label style="display: block; margin-bottom: 8px; font-size: 14px; font-weight: 600; color: #333;">
+                        Additional Keywords
+                    </label>
+                    <p style="margin: 0 0 12px 0; font-size: 13px; color: #666;">Enter any additional keywords that describe your capabilities (one per line). These will be reviewed before approval.<?php echo $is_edit_mode ? ' New keywords will be added to your existing ones.' : ''; ?></p>
+                    <textarea id="n88-freeform-keywords" name="freeform_keywords" rows="4" placeholder="Enter keywords, one per line..." style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; font-family: inherit; resize: vertical;"></textarea>
+                </div>
+
+                <!-- Capability Flags -->
+                <div style="margin-bottom: 25px;">
+                    <label style="display: block; margin-bottom: 12px; font-size: 14px; font-weight: 600; color: #333;">
+                        Capabilities
+                    </label>
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                            <input type="checkbox" id="n88-prototype-video-capable" name="prototype_video_capable" value="1" <?php checked( $existing_profile && $existing_profile->prototype_video_capable == 1 ); ?> required style="width: 18px; height: 18px; cursor: pointer;">
+                            <span style="font-size: 14px; color: #333;">
+                                Prototype Video Capable <span style="color: #d63638;">*</span>
+                            </span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                            <input type="checkbox" id="n88-cad-capable" name="cad_capable" value="1" <?php checked( $existing_profile && $existing_profile->cad_capable == 1 ); ?> style="width: 18px; height: 18px; cursor: pointer;">
+                            <span style="font-size: 14px; color: #333;">CAD Capable</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Optional Capacity Fields -->
+                <div style="margin-bottom: 25px;">
+                    <label style="display: block; margin-bottom: 12px; font-size: 14px; font-weight: 600; color: #333;">
+                        Capacity (Optional)
+                    </label>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                        <div>
+                            <label style="display: block; margin-bottom: 6px; font-size: 13px; color: #666;">Minimum Quantity</label>
+                            <input type="number" id="n88-qty-min" name="qty_min" min="0" value="<?php echo $existing_profile && $existing_profile->qty_min ? esc_attr( $existing_profile->qty_min ) : ''; ?>" style="width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 6px; font-size: 13px; color: #666;">Maximum Quantity</label>
+                            <input type="number" id="n88-qty-max" name="qty_max" min="0" value="<?php echo $existing_profile && $existing_profile->qty_max ? esc_attr( $existing_profile->qty_max ) : ''; ?>" style="width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 6px; font-size: 13px; color: #666;">Lead Time Min (Days)</label>
+                            <input type="number" id="n88-lead-time-min" name="lead_time_min_days" min="0" value="<?php echo $existing_profile && $existing_profile->lead_time_min_days ? esc_attr( $existing_profile->lead_time_min_days ) : ''; ?>" style="width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 6px; font-size: 13px; color: #666;">Lead Time Max (Days)</label>
+                            <input type="number" id="n88-lead-time-max" name="lead_time_max_days" min="0" value="<?php echo $existing_profile && $existing_profile->lead_time_max_days ? esc_attr( $existing_profile->lead_time_max_days ) : ''; ?>" style="width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Submit Button -->
+                <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0;">
+                    <button type="submit" id="n88-submit-profile" style="padding: 12px 24px; background-color: #0073aa; color: #fff; border: none; border-radius: 4px; font-size: 14px; font-weight: 600; cursor: pointer; width: 100%;">
+                        Save Profile
+                    </button>
+                    <div id="n88-form-message" style="margin-top: 15px; font-size: 14px; display: none;"></div>
+                </div>
+            </form>
+        </div>
+
+        <script>
+        (function() {
+            var form = document.getElementById('n88-supplier-onboarding-form');
+            var categorySelect = document.getElementById('n88-primary-category');
+            var keywordsContainer = document.getElementById('n88-keywords-container');
+            var submitButton = document.getElementById('n88-submit-profile');
+            var messageDiv = document.getElementById('n88-form-message');
+
+            // Existing keyword IDs for prefilling (Commit 2.2.7)
+            var existingKeywordIds = <?php echo json_encode( array_map( 'intval', $existing_keyword_ids ) ); ?>;
+
+            // Function to load keywords
+            function loadKeywords(categoryId, prefillIds) {
+                if (!categoryId) {
+                    keywordsContainer.innerHTML = '<p style="margin: 0; color: #999; font-size: 13px; font-style: italic;">Select a category first to see keywords</p>';
+                    return;
+                }
+
+                keywordsContainer.innerHTML = '<p style="margin: 0; color: #666; font-size: 13px;">Loading keywords...</p>';
+
+                // Fetch keywords for selected category
+                var formData = new FormData();
+                formData.append('action', 'n88_get_keywords_by_category');
+                formData.append('category_id', categoryId);
+                formData.append('_ajax_nonce', '<?php echo wp_create_nonce( 'n88_get_keywords' ); ?>');
+
+                fetch('<?php echo admin_url( 'admin-ajax.php' ); ?>', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success && data.data && data.data.keywords) {
+                        keywordsContainer.innerHTML = '';
+                        data.data.keywords.forEach(function(keyword) {
+                            var label = document.createElement('label');
+                            label.style.cssText = 'display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background-color: #fff; border: 1px solid #ddd; border-radius: 20px; cursor: pointer; font-size: 13px; margin: 0;';
+                            
+                            var checkbox = document.createElement('input');
+                            checkbox.type = 'checkbox';
+                            checkbox.name = 'selected_keywords[]';
+                            checkbox.value = keyword.keyword_id;
+                            checkbox.style.cssText = 'width: 16px; height: 16px; cursor: pointer; margin: 0;';
+                            
+                            // Prefill if this keyword was previously selected
+                            if (prefillIds && prefillIds.indexOf(parseInt(keyword.keyword_id)) !== -1) {
+                                checkbox.checked = true;
+                            }
+                            
+                            var span = document.createElement('span');
+                            span.textContent = keyword.keyword;
+                            span.style.color = '#333';
+                            
+                            label.appendChild(checkbox);
+                            label.appendChild(span);
+                            keywordsContainer.appendChild(label);
+                        });
+
+                        if (data.data.keywords.length === 0) {
+                            keywordsContainer.innerHTML = '<p style="margin: 0; color: #999; font-size: 13px; font-style: italic;">No keywords available for this category</p>';
+                        }
+                    } else {
+                        keywordsContainer.innerHTML = '<p style="margin: 0; color: #d63638; font-size: 13px;">Error loading keywords</p>';
+                    }
+                })
+                .catch(error => {
+                    keywordsContainer.innerHTML = '<p style="margin: 0; color: #d63638; font-size: 13px;">Error loading keywords</p>';
+                });
+            }
+
+            // Load keywords when category changes
+            categorySelect.addEventListener('change', function() {
+                loadKeywords(this.value, existingKeywordIds);
+            });
+
+            // Load keywords on page load if category is already selected (edit mode)
+            <?php if ( $existing_profile && $existing_profile->primary_category_id ) : ?>
+            loadKeywords(<?php echo intval( $existing_profile->primary_category_id ); ?>, existingKeywordIds);
+            <?php endif; ?>
+
+            // Handle form submission
+            form.addEventListener('submit', function(e) {
+                e.preventDefault();
+
+                var formData = new FormData(form);
+                formData.append('action', 'n88_save_supplier_profile');
+
+                submitButton.disabled = true;
+                submitButton.textContent = 'Saving...';
+                messageDiv.style.display = 'none';
+
+                fetch('<?php echo admin_url( 'admin-ajax.php' ); ?>', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        messageDiv.style.cssText = 'margin-top: 15px; font-size: 14px; display: block; padding: 12px; background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; border-radius: 4px;';
+                        messageDiv.textContent = data.data.message || 'Profile saved successfully!';
+                        
+                        // Redirect after 2 seconds
+                        setTimeout(function() {
+                            window.location.href = '<?php echo esc_url( home_url( '/supplier/queue' ) ); ?>';
+                        }, 2000);
+                    } else {
+                        messageDiv.style.cssText = 'margin-top: 15px; font-size: 14px; display: block; padding: 12px; background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; border-radius: 4px;';
+                        messageDiv.textContent = data.data.message || 'Error saving profile. Please try again.';
+                        submitButton.disabled = false;
+                        submitButton.textContent = 'Save Profile';
+                    }
+                })
+                .catch(error => {
+                    messageDiv.style.cssText = 'margin-top: 15px; font-size: 14px; display: block; padding: 12px; background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; border-radius: 4px;';
+                    messageDiv.textContent = 'Error saving profile. Please try again.';
+                    submitButton.disabled = false;
+                    submitButton.textContent = 'Save Profile';
+                });
+            });
+        })();
+        </script>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * AJAX handler to fetch keywords by category (Commit 2.2.7)
+     */
+    public function ajax_get_keywords_by_category() {
+        check_ajax_referer( 'n88_get_keywords', '_ajax_nonce' );
+
+        if ( ! is_user_logged_in() ) {
+            wp_send_json_error( array( 'message' => 'Authentication required.' ) );
+        }
+
+        $current_user = wp_get_current_user();
+        if ( ! in_array( 'n88_supplier_admin', $current_user->roles, true ) ) {
+            wp_send_json_error( array( 'message' => 'Access denied.' ) );
+        }
+
+        $category_id = isset( $_POST['category_id'] ) ? intval( $_POST['category_id'] ) : 0;
+
+        if ( ! $category_id ) {
+            wp_send_json_error( array( 'message' => 'Category ID required.' ) );
+        }
+
+        global $wpdb;
+        $keywords_table = $wpdb->prefix . 'n88_keywords';
+
+        $keywords = $wpdb->get_results( $wpdb->prepare(
+            "SELECT keyword_id, keyword FROM {$keywords_table} WHERE category_id = %d AND is_active = 1 ORDER BY keyword",
+            $category_id
+        ) );
+
+        wp_send_json_success( array( 'keywords' => $keywords ) );
+    }
+
+    /**
+     * AJAX handler to save supplier profile (Commit 2.2.7)
+     */
+    public function ajax_save_supplier_profile() {
+        check_ajax_referer( 'n88_save_supplier_profile', 'n88_supplier_profile_nonce' );
+
+        if ( ! is_user_logged_in() ) {
+            wp_send_json_error( array( 'message' => 'Authentication required.' ) );
+        }
+
+        $current_user = wp_get_current_user();
+        if ( ! in_array( 'n88_supplier_admin', $current_user->roles, true ) ) {
+            wp_send_json_error( array( 'message' => 'Access denied. Supplier Admin account required.' ) );
+        }
+
+        $user_id = $current_user->ID;
+
+        // Get and sanitize form data
+        $primary_category_id = isset( $_POST['primary_category_id'] ) ? intval( $_POST['primary_category_id'] ) : 0;
+        $selected_keywords = isset( $_POST['selected_keywords'] ) ? array_map( 'intval', (array) $_POST['selected_keywords'] ) : array();
+        $freeform_keywords = isset( $_POST['freeform_keywords'] ) ? sanitize_textarea_field( wp_unslash( $_POST['freeform_keywords'] ) ) : '';
+        $prototype_video_capable = isset( $_POST['prototype_video_capable'] ) ? 1 : 0;
+        $cad_capable = isset( $_POST['cad_capable'] ) ? 1 : 0;
+        $qty_min = isset( $_POST['qty_min'] ) ? intval( $_POST['qty_min'] ) : null;
+        $qty_max = isset( $_POST['qty_max'] ) ? intval( $_POST['qty_max'] ) : null;
+        $lead_time_min_days = isset( $_POST['lead_time_min_days'] ) ? intval( $_POST['lead_time_min_days'] ) : null;
+        $lead_time_max_days = isset( $_POST['lead_time_max_days'] ) ? intval( $_POST['lead_time_max_days'] ) : null;
+
+        // Validate required fields
+        if ( ! $primary_category_id ) {
+            wp_send_json_error( array( 'message' => 'Primary category is required.' ) );
+        }
+
+        if ( ! $prototype_video_capable ) {
+            wp_send_json_error( array( 'message' => 'Prototype video capability is required.' ) );
+        }
+
+        global $wpdb;
+        $supplier_profiles_table = $wpdb->prefix . 'n88_supplier_profiles';
+        $supplier_keyword_map_table = $wpdb->prefix . 'n88_supplier_keyword_map';
+        $supplier_keyword_freeform_table = $wpdb->prefix . 'n88_supplier_keyword_freeform';
+        $categories_table = $wpdb->prefix . 'n88_categories';
+
+        // Verify category exists
+        $category_exists = $wpdb->get_var( $wpdb->prepare(
+            "SELECT category_id FROM {$categories_table} WHERE category_id = %d AND is_active = 1",
+            $primary_category_id
+        ) );
+
+        if ( ! $category_exists ) {
+            wp_send_json_error( array( 'message' => 'Invalid category selected.' ) );
+        }
+
+        // Verify selected keywords exist and belong to the selected category
+        if ( ! empty( $selected_keywords ) ) {
+            $keywords_table = $wpdb->prefix . 'n88_keywords';
+            $placeholders = implode( ',', array_fill( 0, count( $selected_keywords ), '%d' ) );
+            $query = $wpdb->prepare(
+                "SELECT keyword_id FROM {$keywords_table} WHERE keyword_id IN ($placeholders) AND category_id = %d AND is_active = 1",
+                array_merge( $selected_keywords, array( $primary_category_id ) )
+            );
+            $valid_keywords = $wpdb->get_col( $query );
+            $selected_keywords = array_intersect( $selected_keywords, $valid_keywords );
+        }
+
+        // Start transaction (using WordPress transaction pattern)
+        $wpdb->query( 'START TRANSACTION' );
+
+        try {
+            // Save or update supplier profile
+            $existing_profile = $wpdb->get_var( $wpdb->prepare(
+                "SELECT supplier_id FROM {$supplier_profiles_table} WHERE supplier_id = %d",
+                $user_id
+            ) );
+
+            $profile_data = array(
+                'supplier_id' => $user_id,
+                'primary_category_id' => $primary_category_id,
+                'prototype_video_capable' => $prototype_video_capable,
+                'cad_capable' => $cad_capable,
+                'qty_min' => $qty_min ? $qty_min : null,
+                'qty_max' => $qty_max ? $qty_max : null,
+                'lead_time_min_days' => $lead_time_min_days ? $lead_time_min_days : null,
+                'lead_time_max_days' => $lead_time_max_days ? $lead_time_max_days : null,
+            );
+
+            if ( $existing_profile ) {
+                // Update existing profile
+                $wpdb->update(
+                    $supplier_profiles_table,
+                    $profile_data,
+                    array( 'supplier_id' => $user_id ),
+                    array( '%d', '%d', '%d', '%d', '%d', '%d', '%d', '%d' ),
+                    array( '%d' )
+                );
+            } else {
+                // Insert new profile (minimal required fields)
+                $profile_data['company_name'] = $current_user->display_name ? $current_user->display_name : 'Supplier';
+                $wpdb->insert(
+                    $supplier_profiles_table,
+                    $profile_data,
+                    array( '%d', '%s', '%d', '%d', '%d', '%d', '%d', '%d', '%d', '%d' )
+                );
+            }
+
+            // Delete existing keyword mappings for this supplier
+            $wpdb->delete(
+                $supplier_keyword_map_table,
+                array( 'supplier_id' => $user_id ),
+                array( '%d' )
+            );
+
+            // Insert new keyword mappings
+            if ( ! empty( $selected_keywords ) ) {
+                foreach ( $selected_keywords as $keyword_id ) {
+                    $wpdb->insert(
+                        $supplier_keyword_map_table,
+                        array(
+                            'supplier_id' => $user_id,
+                            'keyword_id' => $keyword_id,
+                        ),
+                        array( '%d', '%d' )
+                    );
+                }
+            }
+
+            // Process freeform keywords
+            if ( ! empty( $freeform_keywords ) ) {
+                $freeform_lines = array_filter( array_map( 'trim', explode( "\n", $freeform_keywords ) ) );
+                foreach ( $freeform_lines as $freeform_keyword ) {
+                    if ( ! empty( $freeform_keyword ) ) {
+                        $wpdb->insert(
+                            $supplier_keyword_freeform_table,
+                            array(
+                                'supplier_id' => $user_id,
+                                'freeform_keyword' => $freeform_keyword,
+                                'status' => 'pending',
+                                'created_at' => current_time( 'mysql' ),
+                            ),
+                            array( '%d', '%s', '%s', '%s' )
+                        );
+                    }
+                }
+            }
+
+            $wpdb->query( 'COMMIT' );
+
+            wp_send_json_success( array(
+                'message' => 'Profile saved successfully!',
+            ) );
+
+        } catch ( Exception $e ) {
+            $wpdb->query( 'ROLLBACK' );
+            wp_send_json_error( array(
+                'message' => 'Error saving profile. Please try again.',
+            ) );
+        }
+    }
+
+    /**
+     * Static version of get_role_redirect_url for use in error pages (updated Commit 2.2.7)
      */
     private static function get_role_redirect_url_static( $user ) {
         if ( ! $user || ! isset( $user->roles ) ) {
@@ -1904,6 +2392,20 @@ class N88_RFQ_Auth {
         }
         
         if ( in_array( 'n88_supplier_admin', $user->roles, true ) ) {
+            // Commit 2.2.7: Check if supplier profile is incomplete
+            global $wpdb;
+            $supplier_profiles_table = $wpdb->prefix . 'n88_supplier_profiles';
+            $profile_exists = $wpdb->get_var( $wpdb->prepare(
+                "SELECT supplier_id FROM {$supplier_profiles_table} WHERE supplier_id = %d",
+                $user->ID
+            ) );
+            
+            // If profile doesn't exist, redirect to onboarding
+            if ( ! $profile_exists ) {
+                return home_url( '/supplier/onboarding' );
+            }
+            
+            // Otherwise, redirect to queue
             return home_url( '/supplier/queue' );
         }
         

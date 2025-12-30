@@ -233,6 +233,7 @@ class N88_RFQ_Installer {
         
         // For nested pages, try get_page_by_path first, then check by parent
         $supplier_queue_page = get_page_by_path( 'supplier/queue' );
+        $supplier_onboarding_page = get_page_by_path( 'supplier/onboarding' );
         $admin_queue_page = get_page_by_path( 'admin/queue' );
         
         // If get_page_by_path didn't work, try finding by parent and slug
@@ -252,6 +253,22 @@ class N88_RFQ_Installer {
             }
         }
         
+        if ( ! $supplier_onboarding_page ) {
+            $supplier_parent_check = get_page_by_path( 'supplier' );
+            if ( $supplier_parent_check ) {
+                $pages = get_pages( array(
+                    'post_status' => 'publish',
+                    'parent' => $supplier_parent_check->ID,
+                ) );
+                foreach ( $pages as $page ) {
+                    if ( $page->post_name === 'onboarding' ) {
+                        $supplier_onboarding_page = $page;
+                        break;
+                    }
+                }
+            }
+        }
+
         if ( ! $admin_queue_page ) {
             $admin_parent_check = get_page_by_path( 'admin' );
             if ( $admin_parent_check ) {
@@ -342,6 +359,35 @@ class N88_RFQ_Installer {
                 ) );
             }
             update_option( 'n88_rfq_supplier_queue_page_id', $supplier_queue_page->ID );
+        }
+
+        // Create Supplier Onboarding page (Commit 2.2.7)
+        if ( ! $supplier_onboarding_page ) {
+            $supplier_onboarding_id = wp_insert_post( array(
+                'post_title'    => 'Supplier Onboarding',
+                'post_name'     => 'onboarding',
+                'post_content'  => '[n88_supplier_onboarding]',
+                'post_status'   => 'publish',
+                'post_type'     => 'page',
+                'post_author'   => 1,
+                'post_parent'   => $supplier_parent_id > 0 ? $supplier_parent_id : 0,
+            ) );
+
+            if ( is_wp_error( $supplier_onboarding_id ) ) {
+                error_log( 'N88 RFQ: Failed to create supplier onboarding page: ' . $supplier_onboarding_id->get_error_message() );
+            } else {
+                update_option( 'n88_rfq_supplier_onboarding_page_id', $supplier_onboarding_id );
+            }
+        } else {
+            // Update existing page to ensure it has the shortcode
+            if ( strpos( $supplier_onboarding_page->post_content, '[n88_supplier_onboarding]' ) === false ) {
+                wp_update_post( array(
+                    'ID'           => $supplier_onboarding_page->ID,
+                    'post_content' => '[n88_supplier_onboarding]',
+                    'post_parent' => $supplier_parent_id > 0 ? $supplier_parent_id : $supplier_onboarding_page->post_parent,
+                ) );
+            }
+            update_option( 'n88_rfq_supplier_onboarding_page_id', $supplier_onboarding_page->ID );
         }
 
         // Create Admin parent page if it doesn't exist
