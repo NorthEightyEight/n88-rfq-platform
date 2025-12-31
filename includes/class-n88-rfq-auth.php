@@ -41,6 +41,9 @@ class N88_RFQ_Auth {
         
         // Commit 2.2.8: Designer profile save handler
         add_action( 'wp_ajax_n88_save_designer_profile', array( $this, 'ajax_save_designer_profile' ) );
+        
+        // Commit 2.3.2: Supplier RFQ detail view (read-only)
+        add_action( 'wp_ajax_n88_get_supplier_item_details', array( $this, 'ajax_get_supplier_item_details' ) );
 
         // Create custom roles on activation
         add_action( 'init', array( $this, 'create_custom_roles' ) );
@@ -1197,121 +1200,176 @@ class N88_RFQ_Auth {
                 }
             });
             
-            // Demo item data
-            var demoItems = {
-                '1023': {
-                    id: '1023',
-                    title: 'Curved Sofa',
-                    category: 'Upholstery',
-                    requestType: 'Pricing Req',
-                    description: 'Modern curved sofa for reception area',
-                    quantity: 2,
-                    dimensions: { w: 240, d: 100, h: 85, unit: 'cm' },
-                    status: 'Pricing Req'
-                },
-                '1027': {
-                    id: '1027',
-                    title: 'Dining Chair',
-                    category: 'Casegoods',
-                    requestType: 'Awaiting Bid',
-                    description: 'Contemporary dining chair with upholstered seat',
-                    quantity: 8,
-                    dimensions: { w: 50, d: 55, h: 95, unit: 'cm' },
-                    status: 'Awaiting Bid'
-                },
-                '1031': {
-                    id: '1031',
-                    title: 'Banquette',
-                    category: 'Upholstery',
-                    requestType: 'Bid Submitted',
-                    description: 'Custom banquette seating for dining area',
-                    quantity: 1,
-                    dimensions: { w: 300, d: 60, h: 90, unit: 'cm' },
-                    status: 'Bid Submitted'
-                }
-            };
-            
             function openBidModal(itemId) {
-                var item = demoItems[itemId];
-                if (!item) return;
-                
                 var modal = document.getElementById('n88-supplier-bid-modal');
                 var modalContent = document.getElementById('n88-supplier-bid-modal-content');
                 
                 if (!modal || !modalContent) return;
                 
-                // Build modal HTML - Supplier Bid Modal (matching wireframe exactly)
-                var modalHTML = '<div style="padding: 20px; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center; background-color: #fff;">' +
-                    '<h2 style="margin: 0; font-size: 20px; font-weight: 600; color: #333;">Item #' + item.id + ' <span style="color: #666; font-weight: 400;">(Supplier View)</span></h2>' +
-                    '<button onclick="closeBidModal()" style="background: none; border: none; font-size: 28px; cursor: pointer; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; color: #666; line-height: 1;">×</button>' +
-                    '</div>' +
-                    '<div style="flex: 1; overflow-y: auto; padding: 0; background-color: #fff;">' +
-                    '<div style="padding: 20px;">' +
-                    // READ-ONLY PLACEHOLDER text
-                    '<div style="margin-bottom: 24px; padding: 12px; background-color: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">' +
-                    '<div style="font-size: 13px; color: #856404; font-weight: 500;">READ-ONLY PLACEHOLDER <span style="color: #ff6600;">(Phase 2.2.x)</span></div>' +
-                    '</div>' +
-                    // Item Title
-                    '<div style="margin-bottom: 16px;">' +
-                    '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #666;">Item Title:</label>' +
-                    '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #333;">' + item.title + '</div>' +
-                    '</div>' +
-                    // Category
-                    '<div style="margin-bottom: 16px;">' +
-                    '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #666;">Category:</label>' +
-                    '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #333;">' + item.category + '</div>' +
-                    '</div>' +
-                    // Status/Queue
-                    '<div style="margin-bottom: 24px;">' +
-                    '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #666;">Status/Queue:</label>' +
-                    '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #333;">' + item.requestType + '</div>' +
-                    '</div>' +
-                    // Specs (if available)
-                    '<div style="margin-bottom: 24px;">' +
-                    '<h3 style="font-size: 14px; font-weight: 600; margin-bottom: 16px; color: #333; border-bottom: 1px solid #e0e0e0; padding-bottom: 8px;">Specs (if available)</h3>' +
-                    '<div style="margin-bottom: 12px;">' +
-                    '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #666;">Qty:</label>' +
-                    '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #999;">—</div>' +
-                    '</div>' +
-                    '<div style="margin-bottom: 12px;">' +
-                    '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #666;">Dims:</label>' +
-                    '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #999;">W— D— H— Unit: —</div>' +
-                    '</div>' +
-                    '<div style="margin-bottom: 12px;">' +
-                    '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #666;">CBM:</label>' +
-                    '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #999;">—</div>' +
-                    '</div>' +
-                    '<div style="margin-bottom: 12px;">' +
-                    '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #666;">sourcing_type:</label>' +
-                    '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #999;">—</div>' +
-                    '</div>' +
-                    '<div style="margin-bottom: 12px;">' +
-                    '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #666;">timeline_type:</label>' +
-                    '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #999;">—</div>' +
-                    '</div>' +
-                    '</div>' +
-                    // Notes/Description
-                    '<div style="margin-bottom: 24px;">' +
-                    '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #666;">Notes/Description:</label>' +
-                    '<div style="padding: 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; min-height: 100px; color: #999; display: flex; align-items: center; justify-content: center;">[ ]</div>' +
-                    '</div>' +
-                    // References
-                    '<div style="margin-bottom: 24px;">' +
-                    '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #666;">References (thumbs if exist):</label>' +
-                    '<div style="display: flex; gap: 12px; flex-wrap: wrap;">' +
-                    '<div style="width: 100px; height: 100px; background-color: #f0f0f0; border: 2px dashed #ccc; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #999; font-size: 12px;">[thumb]</div>' +
-                    '<div style="width: 100px; height: 100px; background-color: #f0f0f0; border: 2px dashed #ccc; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #999; font-size: 12px;">[thumb]</div>' +
-                    '</div>' +
-                    '</div>' +
-                    '</div>' +
-                    // Footer
-                    '<div style="padding: 20px; border-top: 1px solid #e0e0e0; background-color: #fff;">' +
-                    '<div style="font-size: 12px; color: #999; font-style: italic; text-align: center;">(No bid UI. No prototype UI. No uploads.)</div>' +
-                    '</div>';
-                
-                modalContent.innerHTML = modalHTML;
+                // Show loading state
+                modalContent.innerHTML = '<div style="padding: 40px; text-align: center; color: #666;">Loading item details...</div>';
                 modal.style.display = 'block';
                 document.body.style.overflow = 'hidden';
+                
+                // Fetch item details via AJAX (Commit 2.3.2)
+                var formData = new FormData();
+                formData.append('action', 'n88_get_supplier_item_details');
+                formData.append('item_id', itemId);
+                formData.append('_ajax_nonce', '<?php echo wp_create_nonce( 'n88_get_supplier_item_details' ); ?>');
+                
+                fetch('<?php echo esc_url( admin_url( 'admin-ajax.php' ) ); ?>', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(function(response) {
+                    return response.json();
+                })
+                .then(function(data) {
+                    if (!data.success) {
+                        modalContent.innerHTML = '<div style="padding: 40px; text-align: center; color: #d32f2f;">' + 
+                            '<p style="margin-bottom: 20px;">' + (data.data && data.data.message ? data.data.message : 'Error loading item details') + '</p>' +
+                            '<button onclick="closeBidModal()" style="padding: 8px 16px; background-color: #0073aa; color: #fff; border: none; border-radius: 4px; cursor: pointer;">Close</button>' +
+                            '</div>';
+                        return;
+                    }
+                    
+                    var item = data.data;
+                    
+                    // Format dimensions
+                    var dimsText = '—';
+                    if (item.dimensions) {
+                        var w = item.dimensions.w || '—';
+                        var d = item.dimensions.d || '—';
+                        var h = item.dimensions.h || '—';
+                        var unit = item.dimensions.unit || '';
+                        dimsText = 'W: ' + w + ' ' + unit + ' × D: ' + d + ' ' + unit + ' × H: ' + h + ' ' + unit;
+                    }
+                    
+                    // Format sourcing_type and timeline_type
+                    var sourcingTypeText = item.sourcing_type || '—';
+                    var timelineTypeText = item.timeline_type || '—';
+                    
+                    // Build reference images HTML
+                    var refImagesHTML = '';
+                    if (item.reference_images && item.reference_images.length > 0) {
+                        refImagesHTML = item.reference_images.map(function(img) {
+                            return '<img src="' + img.url + '" style="width: 100px; height: 100px; object-fit: cover; border-radius: 4px; border: 1px solid #e0e0e0; cursor: pointer;" onclick="window.open(\'' + img.full_url + '\', \'_blank\');" title="Click to view full size" />';
+                        }).join('');
+                    } else {
+                        refImagesHTML = '<div style="color: #999; font-size: 12px;">No reference images available</div>';
+                    }
+                    
+                    // Build media links HTML
+                    var mediaLinksHTML = '';
+                    if (item.media_links && item.media_links.length > 0) {
+                        mediaLinksHTML = '<div style="display: flex; flex-direction: column; gap: 8px;">';
+                        item.media_links.forEach(function(link) {
+                            var url = link.url || link;
+                            var provider = link.provider || 'external';
+                            mediaLinksHTML += '<a href="' + url + '" target="_blank" style="color: #0073aa; text-decoration: none; font-size: 13px;">' + 
+                                (provider === 'youtube' ? '▶ YouTube' : provider === 'vimeo' ? '▶ Vimeo' : provider === 'loom' ? '▶ Loom' : '▶ Media Link') + 
+                                '</a>';
+                        });
+                        mediaLinksHTML += '</div>';
+                    } else {
+                        mediaLinksHTML = '<div style="color: #999; font-size: 12px;">No media links available</div>';
+                    }
+                    
+                    // Build modal HTML - Read-only Supplier RFQ Detail View (Commit 2.3.2)
+                    var modalHTML = '<div style="padding: 20px; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center; background-color: #fff;">' +
+                        '<h2 style="margin: 0; font-size: 20px; font-weight: 600; color: #333;">Item #' + item.item_id + ' <span style="color: #666; font-weight: 400;">(Supplier View)</span></h2>' +
+                        '<button onclick="closeBidModal()" style="background: none; border: none; font-size: 28px; cursor: pointer; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; color: #666; line-height: 1;">×</button>' +
+                        '</div>' +
+                        '<div style="flex: 1; overflow-y: auto; padding: 0; background-color: #fff;">' +
+                        '<div style="padding: 20px;">' +
+                        
+                        // Item Image
+                        (item.image_url ? '<div style="margin-bottom: 24px; text-align: center;">' +
+                            '<img src="' + item.image_url + '" style="max-width: 100%; max-height: 300px; border-radius: 4px; border: 1px solid #e0e0e0;" />' +
+                            '</div>' : '') +
+                        
+                        // Item Title
+                        '<div style="margin-bottom: 16px;">' +
+                        '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #666;">Item Title:</label>' +
+                        '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #333;">' + (item.title || '—') + '</div>' +
+                        '</div>' +
+                        
+                        // Category
+                        '<div style="margin-bottom: 16px;">' +
+                        '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #666;">Category:</label>' +
+                        '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #333;">' + (item.category || '—') + '</div>' +
+                        '</div>' +
+                        
+                        // Routing Context (if available)
+                        (item.route_label ? '<div style="margin-bottom: 16px;">' +
+                            '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #666;">Routing:</label>' +
+                            '<div style="padding: 10px 12px; background-color: #e3f2fd; border-radius: 4px; font-size: 14px; border: 1px solid #90caf9; color: #1976d2;">' + item.route_label + '</div>' +
+                            '<div style="margin-top: 6px; font-size: 12px; color: #666; font-style: italic;">Designer identity remains hidden until award.</div>' +
+                            '</div>' : '') +
+                        
+                        // Delivery Context
+                        '<div style="margin-bottom: 16px;">' +
+                        '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #666;">Delivery:</label>' +
+                        '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #333;">' +
+                            (item.delivery_country ? 'Country: ' + item.delivery_country + '<br>' : '') +
+                            (item.delivery_postal_code ? 'Postal Code: ' + item.delivery_postal_code + '<br>' : '') +
+                            '<strong>Shipping:</strong> ' + item.shipping_mode_label +
+                        '</div>' +
+                        '</div>' +
+                        
+                        // Specs
+                        '<div style="margin-bottom: 24px;">' +
+                        '<h3 style="font-size: 14px; font-weight: 600; margin-bottom: 16px; color: #333; border-bottom: 1px solid #e0e0e0; padding-bottom: 8px;">Specifications</h3>' +
+                        '<div style="margin-bottom: 12px;">' +
+                        '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #666;">Quantity:</label>' +
+                        '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #333;">' + (item.quantity || '—') + '</div>' +
+                        '</div>' +
+                        '<div style="margin-bottom: 12px;">' +
+                        '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #666;">Dimensions:</label>' +
+                        '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #333;">' + dimsText + '</div>' +
+                        '</div>' +
+                        '<div style="margin-bottom: 12px;">' +
+                        '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #666;">Sourcing Type:</label>' +
+                        '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #333;">' + sourcingTypeText + '</div>' +
+                        '</div>' +
+                        '<div style="margin-bottom: 12px;">' +
+                        '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #666;">Timeline Type:</label>' +
+                        '<div style="padding: 10px 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; color: #333;">' + timelineTypeText + '</div>' +
+                        '</div>' +
+                        '</div>' +
+                        
+                        // Notes/Description
+                        '<div style="margin-bottom: 24px;">' +
+                        '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #666;">Notes/Description:</label>' +
+                        '<div style="padding: 12px; background-color: #f5f5f5; border-radius: 4px; font-size: 14px; border: 1px solid #e0e0e0; min-height: 100px; color: #333; white-space: pre-wrap;">' + (item.description || '—') + '</div>' +
+                        '</div>' +
+                        
+                        // Reference Images
+                        '<div style="margin-bottom: 24px;">' +
+                        '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #666;">Reference Images:</label>' +
+                        '<div style="display: flex; gap: 12px; flex-wrap: wrap;">' + refImagesHTML + '</div>' +
+                        '</div>' +
+                        
+                        // Media Links
+                        '<div style="margin-bottom: 24px;">' +
+                        '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #666;">Media Links:</label>' +
+                        mediaLinksHTML +
+                        '</div>' +
+                        
+                        '</div>' +
+                        // Footer - Read-only notice
+                        '<div style="padding: 20px; border-top: 1px solid #e0e0e0; background-color: #fff;">' +
+                        '<div style="font-size: 12px; color: #999; font-style: italic; text-align: center;">Read-only view. No bid form, prototype UI, or uploads available.</div>' +
+                        '</div>';
+                    
+                    modalContent.innerHTML = modalHTML;
+                })
+                .catch(function(error) {
+                    modalContent.innerHTML = '<div style="padding: 40px; text-align: center; color: #d32f2f;">' +
+                        '<p style="margin-bottom: 20px;">Error loading item details. Please try again.</p>' +
+                        '<button onclick="closeBidModal()" style="padding: 8px 16px; background-color: #0073aa; color: #fff; border: none; border-radius: 4px; cursor: pointer;">Close</button>' +
+                        '</div>';
+                });
             }
             
             function closeBidModal() {
@@ -2574,7 +2632,7 @@ class N88_RFQ_Auth {
                             <input type="text" id="n88-city" name="city" value="<?php echo $existing_profile ? esc_attr( $existing_profile->city ) : ''; ?>" style="width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
                         </div>
                         <div>
-                            <label style="display: block; margin-bottom: 6px; font-size: 13px; color: #666;">Zip Code</label>
+                            <label style="display: block; margin-bottom: 6px; font-size: 13px; color: #666;">ZipCommit 2.3.2 — Supplier RFQ Detail View (Read-Only)</label>
                             <input type="text" id="n88-postal-code" name="postal_code" value="<?php echo $existing_profile ? esc_attr( $existing_profile->postal_code ) : ''; ?>" style="width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
                         </div>
                     </div>
@@ -2805,6 +2863,197 @@ class N88_RFQ_Auth {
                 'message' => 'Error saving profile. Please try again.',
             ) );
         }
+    }
+
+    /**
+     * AJAX handler to fetch supplier item details (read-only) (Commit 2.3.2)
+     * Returns item details only if supplier has a route for the item
+     * No database writes - strictly read-only
+     */
+    public function ajax_get_supplier_item_details() {
+        check_ajax_referer( 'n88_get_supplier_item_details', '_ajax_nonce' );
+
+        if ( ! is_user_logged_in() ) {
+            wp_send_json_error( array( 'message' => 'Authentication required.' ) );
+        }
+
+        $current_user = wp_get_current_user();
+        $is_supplier = in_array( 'n88_supplier_admin', $current_user->roles, true );
+        $is_system_operator = in_array( 'n88_system_operator', $current_user->roles, true );
+        
+        if ( ! $is_supplier && ! $is_system_operator ) {
+            wp_send_json_error( array( 'message' => 'Access denied. Supplier account required.' ) );
+        }
+
+        $item_id = isset( $_POST['item_id'] ) ? intval( $_POST['item_id'] ) : 0;
+        
+        if ( ! $item_id ) {
+            wp_send_json_error( array( 'message' => 'Invalid item ID.' ) );
+        }
+
+        global $wpdb;
+        $items_table = $wpdb->prefix . 'n88_items';
+        $rfq_routes_table = $wpdb->prefix . 'n88_rfq_routes';
+        $item_delivery_context_table = $wpdb->prefix . 'n88_item_delivery_context';
+        $categories_table = $wpdb->prefix . 'n88_categories';
+
+        // CRITICAL: Permission check - supplier can only view items they have a route for
+        // System operators can view any item
+        if ( ! $is_system_operator ) {
+            $route_exists = $wpdb->get_var( $wpdb->prepare(
+                "SELECT COUNT(*) FROM {$rfq_routes_table} 
+                WHERE item_id = %d 
+                AND supplier_id = %d 
+                AND status IN ('queued', 'sent', 'viewed', 'bid_submitted')",
+                $item_id,
+                $current_user->ID
+            ) );
+
+            if ( ! $route_exists || intval( $route_exists ) === 0 ) {
+                wp_send_json_error( array( 'message' => 'Access denied. You do not have permission to view this item.' ), 403 );
+            }
+        }
+
+        // Fetch item data
+        $item = $wpdb->get_row( $wpdb->prepare(
+            "SELECT id, title, description, item_type, primary_image_id, meta_json, quantity
+             FROM {$items_table}
+             WHERE id = %d AND deleted_at IS NULL",
+            $item_id
+        ), ARRAY_A );
+
+        if ( ! $item ) {
+            wp_send_json_error( array( 'message' => 'Item not found.' ) );
+        }
+
+        // Parse meta_json for dimensions, sourcing_type, timeline_type, etc.
+        $meta = array();
+        if ( ! empty( $item['meta_json'] ) ) {
+            $decoded_meta = json_decode( $item['meta_json'], true );
+            if ( is_array( $decoded_meta ) ) {
+                $meta = $decoded_meta;
+            }
+        }
+
+        // Get item image
+        $image_url = '';
+        if ( ! empty( $item['primary_image_id'] ) ) {
+            $image_url = wp_get_attachment_image_url( $item['primary_image_id'], 'full' );
+            if ( ! $image_url ) {
+                $image_url = wp_get_attachment_url( $item['primary_image_id'] );
+            }
+        }
+
+        // Get category name
+        $category_name = '';
+        if ( ! empty( $item['item_type'] ) ) {
+            $category = $wpdb->get_row( $wpdb->prepare(
+                "SELECT name FROM {$categories_table} WHERE category_id = %d OR name = %s LIMIT 1",
+                intval( $item['item_type'] ),
+                $item['item_type']
+            ) );
+            if ( $category ) {
+                $category_name = $category->name;
+            } else {
+                $category_name = $item['item_type'];
+            }
+        }
+
+        // Get delivery context
+        $delivery_context = $wpdb->get_row( $wpdb->prepare(
+            "SELECT delivery_country_code, delivery_postal_code, shipping_estimate_mode
+             FROM {$item_delivery_context_table}
+             WHERE item_id = %d",
+            $item_id
+        ), ARRAY_A );
+
+        // Determine shipping mode label
+        $shipping_mode_label = 'Shipping info not provided yet';
+        if ( $delivery_context ) {
+            if ( $delivery_context['shipping_estimate_mode'] === 'auto' ) {
+                $shipping_mode_label = 'Instant shipping estimate available';
+            } else {
+                $shipping_mode_label = 'Shipping will be quoted manually';
+            }
+        }
+
+        // Get routing context (for supplier only, system operators don't need this)
+        $routing_context = null;
+        $route_label = '';
+        if ( ! $is_system_operator ) {
+            $route = $wpdb->get_row( $wpdb->prepare(
+                "SELECT route_type FROM {$rfq_routes_table}
+                 WHERE item_id = %d AND supplier_id = %d
+                 ORDER BY route_id DESC LIMIT 1",
+                $item_id,
+                $current_user->ID
+            ), ARRAY_A );
+
+            if ( $route ) {
+                if ( $route['route_type'] === 'designer_invited' ) {
+                    $route_label = 'Designer-invited RFQ';
+                } elseif ( $route['route_type'] === 'system_invited' ) {
+                    $route_label = 'System-invited RFQ';
+                }
+            }
+        }
+
+        // Get reference images (from item attachments or meta)
+        $reference_images = array();
+        if ( isset( $meta['inspiration'] ) && is_array( $meta['inspiration'] ) ) {
+            foreach ( $meta['inspiration'] as $insp_item ) {
+                if ( isset( $insp_item['id'] ) && ! empty( $insp_item['id'] ) ) {
+                    $thumb_url = wp_get_attachment_image_url( $insp_item['id'], 'thumbnail' );
+                    if ( $thumb_url ) {
+                        $reference_images[] = array(
+                            'id' => $insp_item['id'],
+                            'url' => $thumb_url,
+                            'full_url' => wp_get_attachment_image_url( $insp_item['id'], 'full' )
+                        );
+                    }
+                } elseif ( isset( $insp_item['url'] ) ) {
+                    $reference_images[] = array(
+                        'url' => esc_url_raw( $insp_item['url'] ),
+                        'full_url' => esc_url_raw( $insp_item['url'] )
+                    );
+                }
+            }
+        }
+
+        // Get media links (if stored in meta or separate table)
+        $media_links = array();
+        if ( isset( $meta['media_links'] ) && is_array( $meta['media_links'] ) ) {
+            $media_links = $meta['media_links'];
+        }
+
+        // Extract dimensions
+        $dims = null;
+        if ( isset( $meta['dims'] ) && is_array( $meta['dims'] ) ) {
+            $dims = $meta['dims'];
+        } elseif ( isset( $meta['dims_cm'] ) && is_array( $meta['dims_cm'] ) ) {
+            $dims = $meta['dims_cm'];
+        }
+
+        // Build response (read-only, no writes)
+        $response = array(
+            'item_id' => intval( $item['id'] ),
+            'title' => sanitize_text_field( $item['title'] ),
+            'description' => sanitize_textarea_field( $item['description'] ),
+            'category' => $category_name,
+            'image_url' => $image_url ? esc_url_raw( $image_url ) : '',
+            'quantity' => ! empty( $item['quantity'] ) ? intval( $item['quantity'] ) : null,
+            'dimensions' => $dims,
+            'sourcing_type' => isset( $meta['sourcing_type'] ) ? sanitize_text_field( $meta['sourcing_type'] ) : null,
+            'timeline_type' => isset( $meta['timeline_type'] ) ? sanitize_text_field( $meta['timeline_type'] ) : null,
+            'delivery_country' => $delivery_context ? sanitize_text_field( $delivery_context['delivery_country_code'] ) : null,
+            'delivery_postal_code' => $delivery_context && ! empty( $delivery_context['delivery_postal_code'] ) ? sanitize_text_field( $delivery_context['delivery_postal_code'] ) : null,
+            'shipping_mode_label' => $shipping_mode_label,
+            'route_label' => $route_label,
+            'reference_images' => $reference_images,
+            'media_links' => $media_links,
+        );
+
+        wp_send_json_success( $response );
     }
 }
 
