@@ -3516,6 +3516,8 @@ class N88_RFQ_Admin {
         </script>
         <!-- Commit 2.3.4: RFQ Submission Modal - Define function GLOBALLY before React loads -->
         <script>
+        // Define the function GLOBALLY immediately (BEFORE React components load)
+        // This MUST be defined outside any IIFE and before React renders
         (function() {
             // Create modal HTML
             var modalHTML = '<div id="n88-rfq-submission-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); z-index: 20000; overflow-y: auto;"><div id="n88-rfq-submission-modal-content" style="position: relative; max-width: 600px; margin: 50px auto; background-color: #fff; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); display: flex; flex-direction: column; max-height: 90vh;"></div></div>';
@@ -3538,87 +3540,280 @@ class N88_RFQ_Admin {
                 initRfqModalHTML();
             }
             
-            // Define the function GLOBALLY immediately (BEFORE React components load)
+            // Define the function GLOBALLY (assign to window)
             window.openRfqSubmissionModal = function(itemIds) {
-                console.log('openRfqSubmissionModal called with items:', itemIds);
-                if (!Array.isArray(itemIds) || itemIds.length === 0) {
-                    alert('No items selected.');
+            console.log('openRfqSubmissionModal called with items:', itemIds);
+            if (!Array.isArray(itemIds) || itemIds.length === 0) {
+                alert('No items selected.');
+                return;
+            }
+            
+            // Ensure modal HTML exists
+            var modal = document.getElementById('n88-rfq-submission-modal');
+            var modalContent = document.getElementById('n88-rfq-submission-modal-content');
+            
+            if (!modal || !modalContent) {
+                // Initialize modal HTML if not exists
+                var modalHTML = '<div id="n88-rfq-submission-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); z-index: 20000; overflow-y: auto;"><div id="n88-rfq-submission-modal-content" style="position: relative; max-width: 600px; margin: 50px auto; background-color: #fff; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); display: flex; flex-direction: column; max-height: 90vh;"></div></div>';
+                if (document.body) {
+                    document.body.insertAdjacentHTML('beforeend', modalHTML);
+                    modal = document.getElementById('n88-rfq-submission-modal');
+                    modalContent = document.getElementById('n88-rfq-submission-modal-content');
+                } else {
+                    setTimeout(function() { window.openRfqSubmissionModal(itemIds); }, 100);
                     return;
                 }
-                
-                // Ensure modal HTML exists
-                if (!document.getElementById('n88-rfq-submission-modal')) {
-                    initRfqModalHTML();
-                    // Wait a moment for DOM to update
-                    setTimeout(function() {
-                        window.openRfqSubmissionModal(itemIds);
-                    }, 100);
-                    return;
-                }
-                
-                var modal = document.getElementById('n88-rfq-submission-modal');
-                var modalContent = document.getElementById('n88-rfq-submission-modal-content');
-                if (!modal || !modalContent) {
-                    console.error('RFQ modal elements not found');
-                    return;
-                }
-                
-                // Build form HTML directly (full implementation)
-                var formHTML = '<div style="padding: 20px; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center; background-color: #fff;">' +
-                    '<h2 style="margin: 0; font-size: 20px; font-weight: 600; color: #333;">Request Quote' + (itemIds.length > 1 ? 's' : '') + '</h2>' +
+            }
+            
+            if (!modal || !modalContent) {
+                console.error('RFQ modal elements not found');
+                return;
+            }
+            
+            // Show loading message first
+            var loadingHTML = '<div style="padding: 20px; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center; background-color: #fff;">' +
+                '<h2 style="margin: 0; font-size: 20px; font-weight: 600; color: #333;">Request Quote' + (itemIds.length > 1 ? 's' : '') + '</h2>' +
+                '<button onclick="closeRfqSubmissionModal()" style="background: none; border: none; font-size: 28px; cursor: pointer; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; color: #666; line-height: 1;">×</button>' +
+                '</div>' +
+                '<div style="flex: 1; overflow-y: auto; padding: 60px 20px; background-color: #fff; text-align: center;">' +
+                '<div style="font-size: 16px; color: #666;">Loading...</div>' +
+                '</div>';
+
+            modalContent.innerHTML = loadingHTML;
+            modal.style.display = 'block';
+            document.body.style.overflow = 'hidden';
+            
+            // Build form HTML directly (full implementation)
+            var formHTML = '<div style="padding: 20px; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center; background-color: #fff;">' +
+                '<h2 style="margin: 0; font-size: 20px; font-weight: 600; color: #333;">Request Quote' + (itemIds.length > 1 ? 's' : '') + '</h2>' +
+                '<button onclick="closeRfqSubmissionModal()" style="background: none; border: none; font-size: 28px; cursor: pointer; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; color: #666; line-height: 1;">×</button>' +
+                '</div>' +
+                '<div style="flex: 1; overflow-y: auto; padding: 20px; background-color: #fff;">' +
+                '<form id="n88-rfq-submission-form" onsubmit="return submitRfqForm(event);">' +
+                '<input type="hidden" name="item_ids" value=\'' + JSON.stringify(itemIds) + '\' />' +
+                '<div id="n88-rfq-items-container"></div>' +
+                '<div style="margin-top: 0px; padding-top: 0px; border-top: 0px solid #e0e0e0;">' +
+                '<h3 style="margin: 0 0 12px 0; font-size: 16px; font-weight: 600; color: #333;">Invite Makers</h3>' +
+                '<p style="margin: 0 0 12px 0; font-size: 13px; color: #666;">Enter existing maker username(s) or email address(es). Press Enter or click Add to create a chip. (1-5 invites)</p>' +
+                '<div style="display: flex; gap: 8px; margin-bottom: 12px;">' +
+                '<input type="text" id="n88-invite-supplier-input" placeholder="Username or email" style="flex: 1; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; box-sizing: border-box;" onkeypress="if(event.key===\'Enter\'){event.preventDefault();addInvitedSupplierChip();}" />' +
+                '<button type="button" onclick="addInvitedSupplierChip()" style="padding: 10px 20px; background-color: #0073aa; color: #fff; border: none; border-radius: 4px; font-size: 14px; font-weight: 500; cursor: pointer; white-space: nowrap;">Add</button>' +
+                '</div>' +
+                '<div id="n88-invited-suppliers-chips" style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; min-height: 32px;"></div>' +
+                '<input type="hidden" id="n88-invited-suppliers-json" name="invited_suppliers" value="[]" />' +
+                '<div id="n88-invite-supplier-error" style="font-size: 12px; color: #d32f2f; margin-top: 4px; display: none;"></div>' +
+                '</div>' +
+                '<div style="margin-top: 24px;">' +
+                '<label style="display: flex; align-items: center; cursor: pointer;">' +
+                '<input type="checkbox" id="n88-allow-system-invites" name="allow_system_invites" style="margin-right: 8px; width: 18px; height: 18px; cursor: pointer;" onchange="updateSystemInvitesMessage()" />' +
+                '<span style="font-size: 14px; font-weight: 500; color: #333;">Let WireFrame (OS) source makers for this request</span>' +
+                '</label>' +
+                '<div style="margin-top: 8px; font-size: 13px; color: #666; padding-left: 26px;">If enabled, Wireframe (OS) will find qualified makers based on your item and keywords.</div>' +
+                '<div id="n88-system-invites-message" style="margin-top: 8px; font-size: 13px; color: #666; padding-left: 26px; display: none;"></div>' +
+                '</div>' +
+                '<div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0;">' +
+                '<button type="submit" id="n88-submit-rfq-btn" style="width: 100%; padding: 12px 24px; background-color: #0073aa; color: #fff; border: none; border-radius: 4px; font-size: 14px; font-weight: 600; cursor: pointer;">Submit RFQ</button>' +
+                '<div id="n88-rfq-errors" style="margin-top: 12px; color: #d32f2f; font-size: 13px; display: none;"></div>' +
+                '</div>' +
+                '</form>' +
+                '</div>';
+
+            // Load items first, then show form once items are ready
+            var itemsLoaded = 0;
+            var totalItems = itemIds.length;
+            var loadedItems = [];
+            
+            if (totalItems === 0) {
+                modalContent.innerHTML = '<div style="padding: 20px; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center; background-color: #fff;">' +
+                    '<h2 style="margin: 0; font-size: 20px; font-weight: 600; color: #333;">Request Quote</h2>' +
                     '<button onclick="closeRfqSubmissionModal()" style="background: none; border: none; font-size: 28px; cursor: pointer; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; color: #666; line-height: 1;">×</button>' +
                     '</div>' +
-                    '<div style="flex: 1; overflow-y: auto; padding: 20px; background-color: #fff;">' +
-                    '<form id="n88-rfq-submission-form" onsubmit="return submitRfqForm(event);">' +
-                    '<input type="hidden" name="item_ids" value=\'' + JSON.stringify(itemIds) + '\' />' +
-                    '<div id="n88-rfq-items-container"></div>' +
-                    '<div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0;">' +
-                    '<h3 style="margin: 0 0 12px 0; font-size: 16px; font-weight: 600; color: #333;">Invite Suppliers</h3>' +
-                    '<p style="margin: 0 0 12px 0; font-size: 13px; color: #666;">Enter existing supplier username(s) or email address(es). Press Enter or click Add to create a chip. (1-5 invites)</p>' +
-                    '<div style="display: flex; gap: 8px; margin-bottom: 12px;">' +
-                    '<input type="text" id="n88-invite-supplier-input" placeholder="Username or email" style="flex: 1; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; box-sizing: border-box;" onkeypress="if(event.key===\'Enter\'){event.preventDefault();addInvitedSupplierChip();}" />' +
-                    '<button type="button" onclick="addInvitedSupplierChip()" style="padding: 10px 20px; background-color: #0073aa; color: #fff; border: none; border-radius: 4px; font-size: 14px; font-weight: 500; cursor: pointer; white-space: nowrap;">Add</button>' +
-                    '</div>' +
-                    '<div id="n88-invited-suppliers-chips" style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; min-height: 32px;"></div>' +
-                    '<input type="hidden" id="n88-invited-suppliers-json" name="invited_suppliers" value="[]" />' +
-                    '<div id="n88-invite-supplier-error" style="font-size: 12px; color: #d32f2f; margin-top: 4px; display: none;"></div>' +
-                    '</div>' +
-                    '<div style="margin-top: 24px;">' +
-                    '<label style="display: flex; align-items: center; cursor: pointer;">' +
-                    '<input type="checkbox" id="n88-allow-system-invites" name="allow_system_invites" style="margin-right: 8px; width: 18px; height: 18px; cursor: pointer;" onchange="updateSystemInvitesMessage()" />' +
-                    '<span style="font-size: 14px; font-weight: 500; color: #333;">Let WireFrame (OS) source suppliers for this request</span>' +
-                    '</label>' +
-                    '<div style="margin-top: 8px; font-size: 13px; color: #666; padding-left: 26px;">If enabled, Wireframe (OS) will find qualified suppliers based on your item and keywords.</div>' +
-                    '<div id="n88-system-invites-message" style="margin-top: 8px; font-size: 13px; color: #666; padding-left: 26px; display: none;"></div>' +
-                    '</div>' +
-                    '<div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0;">' +
-                    '<button type="submit" id="n88-submit-rfq-btn" style="width: 100%; padding: 12px 24px; background-color: #0073aa; color: #fff; border: none; border-radius: 4px; font-size: 14px; font-weight: 600; cursor: pointer;">Submit RFQ</button>' +
-                    '<div id="n88-rfq-errors" style="margin-top: 12px; color: #d32f2f; font-size: 13px; display: none;"></div>' +
-                    '</div>' +
-                    '</form>' +
+                    '<div style="flex: 1; overflow-y: auto; padding: 60px 20px; background-color: #fff; text-align: center;">' +
+                    '<div style="font-size: 16px; color: #d32f2f;">No items selected.</div>' +
                     '</div>';
-
+                return;
+            }
+            
+            // Function to show form once all items are loaded
+            function showFormWithItems() {
                 modalContent.innerHTML = formHTML;
-                modal.style.display = 'block';
-                document.body.style.overflow = 'hidden';
-
-                // Load item forms - use helper function if available, otherwise define inline
-                if (window._loadRfqItemForms) {
-                    window._loadRfqItemForms(itemIds);
-                } else {
-                    // Inline implementation
-                    var container = document.getElementById('n88-rfq-items-container');
-                    if (container) {
-                        container.innerHTML = '';
-                        itemIds.forEach(function(itemId) {
+                
+                // Insert loaded items into container
+                var container = document.getElementById('n88-rfq-items-container');
+                if (container) {
+                    container.innerHTML = '';
+                    loadedItems.forEach(function(itemHTML) {
+                        container.insertAdjacentHTML('beforeend', itemHTML);
+                    });
+                    
+                    // Add delivery country change listeners
+                    var countrySelects = container.querySelectorAll('select[name="delivery_country[]"]');
+                    countrySelects.forEach(function(select) {
+                        select.addEventListener('change', function() {
+                            var itemForm = select.closest('.n88-rfq-item-form');
+                            var itemId = itemForm ? itemForm.getAttribute('data-item-id') : '';
+                            var country = select.value.toUpperCase();
+                            var postalInput = itemForm ? itemForm.querySelector('input[name="delivery_postal[]"]') : null;
+                            var noteDiv = document.getElementById('n88-delivery-note-' + itemId);
+                            if (country === 'US' || country === 'CA') {
+                                if (postalInput) postalInput.required = true;
+                                if (noteDiv) {
+                                    noteDiv.style.display = 'block';
+                                    noteDiv.textContent = 'ZIP/postal code is required for US and Canada.';
+                                }
+                            } else {
+                                if (postalInput) postalInput.required = false;
+                                if (noteDiv && country.length > 0) {
+                                    noteDiv.style.display = 'block';
+                                    noteDiv.textContent = 'We are not able to calculate an instant shipping estimate for this delivery location yet, but our team can get back to you with a shipping range within 24 hours.';
+                                } else if (noteDiv) {
+                                    noteDiv.style.display = 'none';
+                                }
+                            }
+                        });
+                    });
+                }
+                
+                // Update system invites message if function available
+                if (window.updateSystemInvitesMessage) {
+                    setTimeout(function() { window.updateSystemInvitesMessage(); }, 100);
+                }
+            }
+            
+            // Load all items first
+            itemIds.forEach(function(itemId) {
                             // Extract numeric ID from "item-87" format
                             var numericId = itemId;
                             if (typeof itemId === 'string' && itemId.indexOf('item-') === 0) {
                                 numericId = itemId.replace('item-', '');
                             }
                             
-                            var itemHTML = '<div class="n88-rfq-item-form" data-item-id="' + numericId + '" style="margin-bottom: 30px; padding-bottom: 30px; border-bottom: 1px solid #e0e0e0;">' +
-                                '<h4 style="margin: 0 0 16px 0; font-size: 15px; font-weight: 600; color: #333;">Item #' + numericId + '</h4>' +
+                            // Fetch item details to get images
+                            var formData = new FormData();
+                            formData.append('action', 'n88_get_supplier_item_details');
+                            formData.append('item_id', numericId);
+                            formData.append('_ajax_nonce', '<?php echo wp_create_nonce( 'n88_get_supplier_item_details' ); ?>');
+                            
+                            fetch('<?php echo esc_url( admin_url( 'admin-ajax.php' ) ); ?>', {
+                                method: 'POST',
+                                body: formData
+                            })
+                            .then(function(response) { return response.json(); })
+                            .then(function(data) {
+                                var item = data.success ? data.data : null;
+                                
+                                // Get primary image URL
+                                var primaryImageUrl = item ? (item.primary_image_url || item.image_url || '') : '';
+                                
+                                // Get inspiration images
+                                var inspirationImages = item ? (item.inspiration_images || item.reference_images || []) : [];
+                                
+                                // Filter and prepare valid reference images
+                                var validReferenceImages = [];
+                                if (inspirationImages && inspirationImages.length > 0) {
+                                    inspirationImages.forEach(function(img) {
+                                        var imgUrl = '';
+                                        var fullUrl = '';
+                                        
+                                        if (typeof img === 'string') {
+                                            imgUrl = img;
+                                            fullUrl = img;
+                                        } else if (typeof img === 'object') {
+                                            imgUrl = img.url || img.thumbnail || img.thumb_url || '';
+                                            fullUrl = img.full_url || img.url || img.thumbnail || img.thumb_url || '';
+                                        }
+                                        
+                                        if (imgUrl && imgUrl.trim() !== '' && (imgUrl.startsWith('http://') || imgUrl.startsWith('https://'))) {
+                                            validReferenceImages.push({
+                                                url: imgUrl,
+                                                fullUrl: fullUrl || imgUrl
+                                            });
+                                        }
+                                    });
+                                }
+                                
+                                // Build image gallery layout: left reference images, center main image, right reference images
+                                // Always show the gallery box
+                                var imageGalleryHTML = '';
+                                
+                                // Split reference images into left and right
+                                var leftImages = [];
+                                var rightImages = [];
+                                validReferenceImages.forEach(function(img, index) {
+                                    if (index % 2 === 0) {
+                                        leftImages.push(img);
+                                    } else {
+                                        rightImages.push(img);
+                                    }
+                                });
+                                
+                                // Build left column (reference images)
+                                var leftColumnHTML = '<div style="display: flex; flex-direction: column; gap: 12px; align-items: center; justify-content: center; min-width: 120px;">';
+                                if (leftImages.length > 0) {
+                                    leftImages.forEach(function(img, index) {
+                                        var imgId = 'n88-rfq-ref-left-' + numericId + '-' + index;
+                                        leftColumnHTML += '<div style="position: relative; width: 100px; height: 100px;">' +
+                                            '<img id="' + imgId + '" ' +
+                                            'src="' + img.url.replace(/"/g, '&quot;') + '" ' +
+                                            'data-full-url="' + img.fullUrl.replace(/"/g, '&quot;') + '" ' +
+                                            'onerror="this.onerror=null; this.src=\'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'%3E%3Crect fill=\'%23000\' width=\'100\' height=\'100\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%23fff\' font-size=\'12\'%3Ereference photo%3C/text%3E%3C/svg%3E\';" ' +
+                                            'style="width: 100px; height: 100px; object-fit: cover; border-radius: 4px; border: 2px solid #ddd; cursor: pointer; transition: all 0.2s; background-color: #000;" ' +
+                                            'onmouseover="this.style.borderColor=\'#0073aa\'; this.style.transform=\'scale(1.05)\'; this.style.boxShadow=\'0 2px 8px rgba(0,115,170,0.3)\';" ' +
+                                            'onmouseout="this.style.borderColor=\'#ddd\'; this.style.transform=\'scale(1)\'; this.style.boxShadow=\'none\';" ' +
+                                            'onclick="(function(elem){var url=elem.getAttribute(\'data-full-url\');if(url&&url.trim()){try{window.open(url,\'_blank\',\'noopener,noreferrer\');}catch(err){console.error(\'Error opening image:\',err);}}else{console.error(\'No URL found for image\');}})(this);" ' +
+                                            'title="Click to view full size" ' +
+                                            'alt="Reference photo" />' +
+                                            '</div>';
+                                    });
+                                }
+                                leftColumnHTML += '</div>';
+                                
+                                // Build center column (main image)
+                                var centerColumnHTML = '<div style="flex: 1; display: flex; align-items: center; justify-content: center; min-height: 300px; padding: 0 20px; max-width: 500px;">';
+                                if (primaryImageUrl) {
+                                    centerColumnHTML += '<img src="' + primaryImageUrl.replace(/"/g, '&quot;') + '" ' +
+                                        'onerror="this.onerror=null; this.src=\'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'400\' height=\'300\'%3E%3Crect fill=\'%23f0f0f0\' width=\'400\' height=\'300\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%23999\' font-size=\'14\'%3EItem Image%3C/text%3E%3C/svg%3E\';" ' +
+                                        'style="max-width: 100%; max-height: 350px; width: auto; height: auto; border-radius: 4px; border: 1px solid #e0e0e0; object-fit: contain; box-shadow: 0 2px 8px rgba(0,0,0,0.1);" ' +
+                                        'alt="Item main image" />';
+                                } else {
+                                    centerColumnHTML += '<div style="width: 100%; height: 300px; background-color: #f0f0f0; border-radius: 4px; border: 1px solid #e0e0e0; display: flex; align-items: center; justify-content: center; color: #999;">No main image available</div>';
+                                }
+                                centerColumnHTML += '</div>';
+                                
+                                // Build right column (reference images)
+                                var rightColumnHTML = '<div style="display: flex; flex-direction: column; gap: 12px; align-items: center; justify-content: center; min-width: 120px;">';
+                                if (rightImages.length > 0) {
+                                    rightImages.forEach(function(img, index) {
+                                        var imgId = 'n88-rfq-ref-right-' + numericId + '-' + index;
+                                        rightColumnHTML += '<div style="position: relative; width: 100px; height: 100px;">' +
+                                            '<img id="' + imgId + '" ' +
+                                            'src="' + img.url.replace(/"/g, '&quot;') + '" ' +
+                                            'data-full-url="' + img.fullUrl.replace(/"/g, '&quot;') + '" ' +
+                                            'onerror="this.onerror=null; this.src=\'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'%3E%3Crect fill=\'%23000\' width=\'100\' height=\'100\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%23fff\' font-size=\'12\'%3Ereference photo%3C/text%3E%3C/svg%3E\';" ' +
+                                            'style="width: 100px; height: 100px; object-fit: cover; border-radius: 4px; border: 2px solid #ddd; cursor: pointer; transition: all 0.2s; background-color: #000;" ' +
+                                            'onmouseover="this.style.borderColor=\'#0073aa\'; this.style.transform=\'scale(1.05)\'; this.style.boxShadow=\'0 2px 8px rgba(0,115,170,0.3)\';" ' +
+                                            'onmouseout="this.style.borderColor=\'#ddd\'; this.style.transform=\'scale(1)\'; this.style.boxShadow=\'none\';" ' +
+                                            'onclick="(function(elem){var url=elem.getAttribute(\'data-full-url\');if(url&&url.trim()){try{window.open(url,\'_blank\',\'noopener,noreferrer\');}catch(err){console.error(\'Error opening image:\',err);}}else{console.error(\'No URL found for image\');}})(this);" ' +
+                                            'title="Click to view full size" ' +
+                                            'alt="Reference photo" />' +
+                                            '</div>';
+                                    });
+                                }
+                                rightColumnHTML += '</div>';
+                                
+                                // Always combine into gallery layout (box always visible)
+                                imageGalleryHTML = '<div style="margin-bottom: 24px; display: flex; gap: 16px; align-items: flex-start; justify-content: center; padding: 16px; background-color: #fafafa; border-radius: 4px; border: 1px solid #e0e0e0;">' +
+                                    leftColumnHTML +
+                                    centerColumnHTML +
+                                    rightColumnHTML +
+                                    '</div>';
+                                
+                                var itemHTML = '<div class="n88-rfq-item-form" data-item-id="' + numericId + '" style="margin-bottom: 30px; padding-bottom: 30px; border-bottom: 1px solid #e0e0e0;">' +
+                                    '<h4 style="margin: 0 0 16px 0; font-size: 15px; font-weight: 600; color: #333;">Item #' + numericId + '</h4>' +
+                                    
+                                    // Image gallery: left reference images, center main image, right reference images
+                                    imageGalleryHTML +
+                                    
                                 '<div style="margin-bottom: 16px;">' +
                                 '<label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 6px; color: #333;">Quantity <span style="color: #d32f2f;">*</span></label>' +
                                 '<input type="number" name="quantity[]" min="1" required style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; box-sizing: border-box;" />' +
@@ -3637,7 +3832,15 @@ class N88_RFQ_Admin {
                                 '</div>' +
                                 '<div style="margin-bottom: 16px;">' +
                                 '<label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 6px; color: #333;">Delivery Country <span style="color: #d32f2f;">*</span></label>' +
-                                '<input type="text" name="delivery_country[]" maxlength="2" placeholder="US, CA, GB, etc." required style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; box-sizing: border-box; text-transform: uppercase;" />' +
+                                '<select name="delivery_country[]" required style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; box-sizing: border-box;">' +
+                                '<option value="">Select Country</option>' +
+                                '<option value="US">USA</option>' +
+                                '<option value="CA">CAN</option>' +
+                                '<option value="CN">CHINA</option>' +
+                                '<option value="VN">VIETNAM</option>' +
+                                '<option value="EU">EUROPE</option>' +
+                                '<option value="AF">AFRICA</option>' +
+                                '</select>' +
                                 '</div>' +
                                 '<div style="margin-bottom: 16px;">' +
                                 '<label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 6px; color: #333;">ZIP/Postal Code</label>' +
@@ -3645,19 +3848,216 @@ class N88_RFQ_Admin {
                                 '<div id="n88-delivery-note-' + numericId + '" style="margin-top: 8px; font-size: 12px; color: #666; display: none;"></div>' +
                                 '</div>' +
                                 '</div>';
-                            container.insertAdjacentHTML('beforeend', itemHTML);
+                            
+                            // Store item HTML instead of inserting immediately
+                            loadedItems.push(itemHTML);
+                            itemsLoaded++;
+                            
+                            // Show form once all items are loaded
+                            if (itemsLoaded >= totalItems) {
+                                showFormWithItems();
+                            }
+                        })
+                        .catch(function(error) {
+                            console.error('Error fetching item details:', error);
+                            itemsLoaded++;
+                            // Show form even if some items failed
+                            if (itemsLoaded >= totalItems) {
+                                showFormWithItems();
+                            }
                         });
+            });
+            };
+            
+            // Expose loadItemForms function globally so it can be called from openRfqSubmissionModal
+            window._loadRfqItemForms = function(itemIds) {
+                var container = document.getElementById('n88-rfq-items-container');
+                if (!container) return;
+                
+                container.innerHTML = '';
+                itemIds.forEach(function(itemId) {
+                    // Extract numeric ID from "item-87" format
+                    var numericId = itemId;
+                    if (typeof itemId === 'string' && itemId.indexOf('item-') === 0) {
+                        numericId = itemId.replace('item-', '');
+                    }
+                    
+                    // Fetch item details to get images
+                    var formData = new FormData();
+                    formData.append('action', 'n88_get_supplier_item_details');
+                    formData.append('item_id', numericId);
+                    formData.append('_ajax_nonce', '<?php echo wp_create_nonce( 'n88_get_supplier_item_details' ); ?>');
+                    
+                    fetch('<?php echo esc_url( admin_url( 'admin-ajax.php' ) ); ?>', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(function(response) { return response.json(); })
+                    .then(function(data) {
+                        var item = data.success ? data.data : null;
+                        
+                        // Get primary image URL
+                        var primaryImageUrl = item ? (item.primary_image_url || item.image_url || '') : '';
+                        
+                        // Get inspiration images
+                        var inspirationImages = item ? (item.inspiration_images || item.reference_images || []) : [];
+                        
+                        // Filter and prepare valid reference images
+                        var validReferenceImages = [];
+                        if (inspirationImages && inspirationImages.length > 0) {
+                            inspirationImages.forEach(function(img) {
+                                var imgUrl = '';
+                                var fullUrl = '';
+                                
+                                if (typeof img === 'string') {
+                                    imgUrl = img;
+                                    fullUrl = img;
+                                } else if (typeof img === 'object') {
+                                    imgUrl = img.url || img.thumbnail || img.thumb_url || '';
+                                    fullUrl = img.full_url || img.url || img.thumbnail || img.thumb_url || '';
+                                }
+                                
+                                if (imgUrl && imgUrl.trim() !== '' && (imgUrl.startsWith('http://') || imgUrl.startsWith('https://'))) {
+                                    validReferenceImages.push({
+                                        url: imgUrl,
+                                        fullUrl: fullUrl || imgUrl
+                                    });
+                                }
+                            });
+                        }
+                        
+                        // Build image gallery layout: left reference images, center main image, right reference images
+                        var imageGalleryHTML = '';
+                        if (primaryImageUrl || validReferenceImages.length > 0) {
+                            // Split reference images into left and right
+                            var leftImages = [];
+                            var rightImages = [];
+                            validReferenceImages.forEach(function(img, index) {
+                                if (index % 2 === 0) {
+                                    leftImages.push(img);
+                                } else {
+                                    rightImages.push(img);
+                                }
+                            });
+                            
+                            // Build left column (reference images)
+                            var leftColumnHTML = '<div style="display: flex; flex-direction: column; gap: 12px; align-items: center; justify-content: center; min-width: 120px;">';
+                            if (leftImages.length > 0) {
+                                leftImages.forEach(function(img, index) {
+                                    var imgId = 'n88-rfq-ref-left-' + numericId + '-' + index;
+                                    leftColumnHTML += '<div style="position: relative; width: 100px; height: 100px;">' +
+                                        '<img id="' + imgId + '" ' +
+                                        'src="' + img.url.replace(/"/g, '&quot;') + '" ' +
+                                        'data-full-url="' + img.fullUrl.replace(/"/g, '&quot;') + '" ' +
+                                        'onerror="this.onerror=null; this.src=\'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'%3E%3Crect fill=\'%23000\' width=\'100\' height=\'100\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%23fff\' font-size=\'12\'%3Ereference photo%3C/text%3E%3C/svg%3E\';" ' +
+                                        'style="width: 100px; height: 100px; object-fit: cover; border-radius: 4px; border: 2px solid #ddd; cursor: pointer; transition: all 0.2s; background-color: #000;" ' +
+                                        'onmouseover="this.style.borderColor=\'#0073aa\'; this.style.transform=\'scale(1.05)\'; this.style.boxShadow=\'0 2px 8px rgba(0,115,170,0.3)\';" ' +
+                                        'onmouseout="this.style.borderColor=\'#ddd\'; this.style.transform=\'scale(1)\'; this.style.boxShadow=\'none\';" ' +
+                                        'onclick="(function(elem){var url=elem.getAttribute(\'data-full-url\');if(url&&url.trim()){try{window.open(url,\'_blank\',\'noopener,noreferrer\');}catch(err){console.error(\'Error opening image:\',err);}}else{console.error(\'No URL found for image\');}})(this);" ' +
+                                        'title="Click to view full size" ' +
+                                        'alt="Reference photo" />' +
+                                        '</div>';
+                                });
+                            } else {
+                                leftColumnHTML += '<div style="width: 100px; height: 100px; background-color: #000; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; text-align: center; padding: 4px;">reference photo</div>';
+                            }
+                            leftColumnHTML += '</div>';
+                            
+                            // Build center column (main image)
+                            var centerColumnHTML = '<div style="flex: 1; display: flex; align-items: center; justify-content: center; min-height: 300px; padding: 0 20px; max-width: 500px;">';
+                            if (primaryImageUrl) {
+                                centerColumnHTML += '<img src="' + primaryImageUrl.replace(/"/g, '&quot;') + '" ' +
+                                    'onerror="this.onerror=null; this.src=\'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'400\' height=\'300\'%3E%3Crect fill=\'%23f0f0f0\' width=\'400\' height=\'300\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%23999\' font-size=\'14\'%3EItem Image%3C/text%3E%3C/svg%3E\';" ' +
+                                    'style="max-width: 100%; max-height: 350px; width: auto; height: auto; border-radius: 4px; border: 1px solid #e0e0e0; object-fit: contain; box-shadow: 0 2px 8px rgba(0,0,0,0.1);" ' +
+                                    'alt="Item main image" />';
+                            } else {
+                                centerColumnHTML += '<div style="width: 100%; height: 300px; background-color: #f0f0f0; border-radius: 4px; border: 1px solid #e0e0e0; display: flex; align-items: center; justify-content: center; color: #999;">No main image available</div>';
+                            }
+                            centerColumnHTML += '</div>';
+                            
+                            // Build right column (reference images)
+                            var rightColumnHTML = '<div style="display: flex; flex-direction: column; gap: 12px; align-items: center; justify-content: center; min-width: 120px;">';
+                            if (rightImages.length > 0) {
+                                rightImages.forEach(function(img, index) {
+                                    var imgId = 'n88-rfq-ref-right-' + numericId + '-' + index;
+                                    rightColumnHTML += '<div style="position: relative; width: 100px; height: 100px;">' +
+                                        '<img id="' + imgId + '" ' +
+                                        'src="' + img.url.replace(/"/g, '&quot;') + '" ' +
+                                        'data-full-url="' + img.fullUrl.replace(/"/g, '&quot;') + '" ' +
+                                        'onerror="this.onerror=null; this.src=\'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'%3E%3Crect fill=\'%23000\' width=\'100\' height=\'100\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%23fff\' font-size=\'12\'%3Ereference photo%3C/text%3E%3C/svg%3E\';" ' +
+                                        'style="width: 100px; height: 100px; object-fit: cover; border-radius: 4px; border: 2px solid #ddd; cursor: pointer; transition: all 0.2s; background-color: #000;" ' +
+                                        'onmouseover="this.style.borderColor=\'#0073aa\'; this.style.transform=\'scale(1.05)\'; this.style.boxShadow=\'0 2px 8px rgba(0,115,170,0.3)\';" ' +
+                                        'onmouseout="this.style.borderColor=\'#ddd\'; this.style.transform=\'scale(1)\'; this.style.boxShadow=\'none\';" ' +
+                                        'onclick="(function(elem){var url=elem.getAttribute(\'data-full-url\');if(url&&url.trim()){try{window.open(url,\'_blank\',\'noopener,noreferrer\');}catch(err){console.error(\'Error opening image:\',err);}}else{console.error(\'No URL found for image\');}})(this);" ' +
+                                        'title="Click to view full size" ' +
+                                        'alt="Reference photo" />' +
+                                        '</div>';
+                                });
+                            } else {
+                                rightColumnHTML += '<div style="width: 100px; height: 100px; background-color: #000; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; text-align: center; padding: 4px;">reference photo</div>';
+                            }
+                            rightColumnHTML += '</div>';
+                            
+                            // Combine into gallery layout
+                            imageGalleryHTML = '<div style="margin-bottom: 24px; display: flex; gap: 16px; align-items: flex-start; justify-content: center; padding: 16px; background-color: #fafafa; border-radius: 4px; border: 1px solid #e0e0e0;">' +
+                                leftColumnHTML +
+                                centerColumnHTML +
+                                rightColumnHTML +
+                                '</div>';
+                        }
+                        
+                        var itemHTML = '<div class="n88-rfq-item-form" data-item-id="' + numericId + '" style="margin-bottom: 30px; padding-bottom: 30px; border-bottom: 1px solid #e0e0e0;">' +
+                            '<h4 style="margin: 0 0 16px 0; font-size: 15px; font-weight: 600; color: #333;">Item #' + numericId + '</h4>' +
+                            
+                            // Image gallery: left reference images, center main image, right reference images
+                            imageGalleryHTML +
+                            
+                            '<div style="margin-bottom: 16px;">' +
+                            '<label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 6px; color: #333;">Quantity <span style="color: #d32f2f;">*</span></label>' +
+                            '<input type="number" name="quantity[]" min="1" required style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; box-sizing: border-box;" />' +
+                            '</div>' +
+                            '<div style="margin-bottom: 16px;">' +
+                            '<label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 6px; color: #333;">Dimensions <span style="color: #d32f2f;">*</span></label>' +
+                            '<div style="display: flex; gap: 8px; align-items: center; max-width: 50%;">' +
+                            '<input type="number" name="width[]" step="0.01" min="0.01" placeholder="Width" required style="flex: 1; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; width: 100px;" />' +
+                            '<input type="number" name="depth[]" step="0.01" min="0.01" placeholder="Depth" required style="flex: 1; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; width: 100px;" />' +
+                            '<input type="number" name="height[]" step="0.01" min="0.01" placeholder="Height" required style="flex: 1; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; width: 100px;" />' +
+                            '<select name="dimension_unit[]" required style="flex: 0 0 80px; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; box-sizing: border-box; width: 100px;">' +
+                            '<option value="in">Inches</option>' +
+                            '<option value="cm">Centimeters</option>' +
+                            '</select>' +
+                            '</div>' +
+                            '</div>' +
+                            '<div style="margin-bottom: 16px;">' +
+                            '<label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 6px; color: #333;">Delivery Country <span style="color: #d32f2f;">*</span></label>' +
+                            '<select name="delivery_country[]" required style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; box-sizing: border-box;">' +
+                            '<option value="">Select Country</option>' +
+                            '<option value="USA">USA</option>' +
+                            '<option value="CAN">CAN</option>' +
+                            '<option value="CHINA">CHINA</option>' +
+                            '<option value="VIETNAM">VIETNAM</option>' +
+                            '<option value="EUROPE">EUROPE</option>' +
+                            '<option value="AFRICA">AFRICA</option>' +
+                            '</select>' +
+                            '</div>' +
+                            '<div style="margin-bottom: 16px;">' +
+                            '<label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 6px; color: #333;">ZIP/Postal Code</label>' +
+                            '<input type="text" name="delivery_postal[]" placeholder="Required for USA/CAN" style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; box-sizing: border-box;" />' +
+                            '<div id="n88-delivery-note-' + numericId + '" style="margin-top: 8px; font-size: 12px; color: #666; display: none;"></div>' +
+                            '</div>' +
+                            '</div>';
+                        container.insertAdjacentHTML('beforeend', itemHTML);
                         
                         // Add delivery country change listeners
-                        var countryInputs = container.querySelectorAll('input[name="delivery_country[]"]');
-                        countryInputs.forEach(function(input) {
-                            input.addEventListener('input', function() {
-                                var itemForm = input.closest('.n88-rfq-item-form');
+                        var countrySelects = container.querySelectorAll('select[name="delivery_country[]"]');
+                        countrySelects.forEach(function(select) {
+                            select.addEventListener('change', function() {
+                                var itemForm = select.closest('.n88-rfq-item-form');
                                 var itemId = itemForm ? itemForm.getAttribute('data-item-id') : '';
-                                var country = input.value.toUpperCase();
+                                var country = select.value.toUpperCase();
                                 var postalInput = itemForm ? itemForm.querySelector('input[name="delivery_postal[]"]') : null;
                                 var noteDiv = document.getElementById('n88-delivery-note-' + itemId);
-                                if (country === 'US' || country === 'CA') {
+                                if (country === 'USA' || country === 'CAN') {
                                     if (postalInput) postalInput.required = true;
                                     if (noteDiv) {
                                         noteDiv.style.display = 'block';
@@ -3665,22 +4065,20 @@ class N88_RFQ_Admin {
                                     }
                                 } else {
                                     if (postalInput) postalInput.required = false;
-                                    if (noteDiv && country.length === 2) {
+                                    if (noteDiv && country.length > 0) {
                                         noteDiv.style.display = 'block';
-                                        noteDiv.textContent = 'We\'re not able to calculate an instant shipping estimate for this delivery location yet, but our team can get back to you with a shipping range within 24 hours.';
+                                        noteDiv.textContent = 'We are not able to calculate an instant shipping estimate for this delivery location yet, but our team can get back to you with a shipping range within 24 hours.';
                                     } else if (noteDiv) {
                                         noteDiv.style.display = 'none';
                                     }
                                 }
                             });
                         });
-                    }
-                }
-                
-                // Update system invites message if function available
-                if (window.updateSystemInvitesMessage) {
-                    setTimeout(function() { window.updateSystemInvitesMessage(); }, 100);
-                }
+                    })
+                    .catch(function(error) {
+                        console.error('Error fetching item details:', error);
+                    });
+                });
             };
             
             // Define close modal function globally
@@ -3714,7 +4112,7 @@ class N88_RFQ_Admin {
                     if (invitedCount > 0) {
                         // Toggle ON + supplier email(s) entered
                         messageDiv.style.display = 'block';
-                        messageDiv.textContent = 'Your invited supplier(s) will receive this request first. WireFrame (OS) will invite additional suppliers after 24 hours.';
+                        messageDiv.textContent = 'Your invited maker(s) will receive this request first. WireFrame (OS) will invite additional makers after 24 hours.';
                     } else {
                         // Toggle ON + NO supplier email entered - hide confirmation message
                         messageDiv.style.display = 'none';
@@ -3749,7 +4147,7 @@ class N88_RFQ_Admin {
                 if (currentChips.length >= 5) {
                     if (errorDiv) {
                         errorDiv.style.display = 'block';
-                        errorDiv.textContent = 'Maximum 5 invited suppliers allowed.';
+                        errorDiv.textContent = 'Maximum 5 invited makers allowed.';
                     }
                     return;
                 }
@@ -3845,7 +4243,8 @@ class N88_RFQ_Admin {
                     var depth = parseFloat(itemForm.querySelector('input[name="depth[]"]').value);
                     var height = parseFloat(itemForm.querySelector('input[name="height[]"]').value);
                     var dimensionUnit = itemForm.querySelector('select[name="dimension_unit[]"]').value;
-                    var deliveryCountry = itemForm.querySelector('input[name="delivery_country[]"]').value.toUpperCase().trim();
+                    var deliveryCountrySelect = itemForm.querySelector('select[name="delivery_country[]"]');
+                    var deliveryCountry = deliveryCountrySelect ? deliveryCountrySelect.value.toUpperCase().trim() : '';
                     var deliveryPostal = itemForm.querySelector('input[name="delivery_postal[]"]').value.trim();
 
                     items.push({
@@ -3893,7 +4292,7 @@ class N88_RFQ_Admin {
                 if (invitedSuppliers.length === 0 && !allowSystemInvitesValue) {
                     if (errorsDiv) {
                         errorsDiv.style.display = 'block';
-                        errorsDiv.textContent = 'Invite at least one supplier or allow the system to invite suppliers.';
+                        errorsDiv.textContent = 'Invite at least one maker or allow the system to invite makers.';
                     }
                     submitBtn.disabled = false;
                     submitBtn.textContent = 'Submit RFQ';
@@ -4910,13 +5309,37 @@ class N88_RFQ_Admin {
                     var unit = _unitState[0];
                     var setUnit = _unitState[1];
                     
-                    var _inspirationState = React.useState(item.inspiration || []);
+                    // Helper function to validate inspiration items
+                    var validateInspirationItem = function(insp) {
+                        if (!insp || typeof insp !== 'object') return false;
+                        var hasId = insp.id && Number.isInteger(Number(insp.id)) && Number(insp.id) > 0;
+                        var url = insp.url ? String(insp.url).trim() : '';
+                        var hasValidUrl = url && 
+                            url.length > 0 &&
+                            (url.startsWith('http://') || url.startsWith('https://')) && 
+                            !url.startsWith('data:');
+                        return hasId || hasValidUrl;
+                    };
+                    
+                    // Filter initial inspiration to only include valid items
+                    var initialInspiration = (item.inspiration || []).filter(validateInspirationItem);
+                    var _inspirationState = React.useState(initialInspiration);
                     var inspiration = _inspirationState[0];
                     var setInspiration = _inspirationState[1];
                     
                     var _isSavingState = React.useState(false);
                     var isSaving = _isSavingState[0];
                     var setIsSaving = _isSavingState[1];
+                    
+                    var _isUploadingInspirationState = React.useState(false);
+                    var isUploadingInspiration = _isUploadingInspirationState[0];
+                    var setIsUploadingInspiration = _isUploadingInspirationState[1];
+                    
+                    // Update inspiration when item changes (if modal is reopened with different item)
+                    React.useEffect(function() {
+                        var validInspiration = (item.inspiration || []).filter(validateInspirationItem);
+                        setInspiration(validInspiration);
+                    }, [item.id]);
                     
                     // Phase 2.1.1: Local state to track if price was requested (frontend only, no persistence)
                     var _priceState = React.useState(false);
@@ -4932,6 +5355,19 @@ class N88_RFQ_Admin {
                     });
                     var computedValues = _computedState[0];
                     var setComputedValues = _computedState[1];
+                    
+                    // Prevent body scroll when modal is open
+                    React.useEffect(function() {
+                        if (isOpen) {
+                            document.body.style.overflow = 'hidden';
+                        } else {
+                            document.body.style.overflow = '';
+                        }
+                        // Cleanup: restore scroll when component unmounts
+                        return function() {
+                            document.body.style.overflow = '';
+                        };
+                    }, [isOpen]);
                     
                     // Recompute when dimensions change
                     React.useEffect(function() {
@@ -4981,9 +5417,58 @@ class N88_RFQ_Admin {
                     
                     // Handle save
                     var handleSave = function() {
+                        // Prevent save if uploads are in progress
+                        if (typeof isUploadingInspiration !== 'undefined' && isUploadingInspiration) {
+                            alert('Please wait for image uploads to complete before saving.');
+                            return;
+                        }
+                        
                         setIsSaving(true);
                         
                         try {
+                            // Validate and filter inspiration images - only keep ones with valid attachment IDs or URLs
+                            var validInspiration = inspiration.filter(function(insp) {
+                                if (!insp || typeof insp !== 'object') {
+                                    console.warn('Filtering out invalid inspiration image (not an object):', insp);
+                                    return false;
+                                }
+                                
+                                // Must have either an attachment ID or a valid URL (not base64 data URL)
+                                var hasId = insp.id && Number.isInteger(Number(insp.id)) && Number(insp.id) > 0;
+                                var url = insp.url ? String(insp.url).trim() : '';
+                                var hasValidUrl = url && 
+                                    url.length > 0 &&
+                                    (url.startsWith('http://') || url.startsWith('https://')) && 
+                                    !url.startsWith('data:');
+                                
+                                if (!hasId && !hasValidUrl) {
+                                    console.warn('Filtering out invalid inspiration image (no valid ID or URL):', insp);
+                                    return false;
+                                }
+                                
+                                return true;
+                            }).map(function(insp) {
+                                // Normalize inspiration item structure - only include valid data
+                                var url = insp.url ? String(insp.url).trim() : '';
+                                var hasValidUrl = url && (url.startsWith('http://') || url.startsWith('https://'));
+                                
+                                return {
+                                    type: insp.type || 'image',
+                                    id: (insp.id && Number.isInteger(Number(insp.id)) && Number(insp.id) > 0) ? Number(insp.id) : null,
+                                    url: hasValidUrl ? url : '',
+                                    title: insp.title || insp.filename || 'Reference image',
+                                };
+                            });
+                            
+                            console.log('Saving inspiration images:', validInspiration.length, 'valid images out of', inspiration.length, 'total');
+                            
+                            // Double-check: if we filtered out images, warn user
+                            if (inspiration.length > 0 && validInspiration.length === 0) {
+                                alert('Warning: All inspiration images were invalid and will not be saved. Please re-upload them.');
+                                setIsSaving(false);
+                                return;
+                            }
+                            
                             // Prepare payload
                             var dimsCm = computedValues.dimsCm;
                             var payload = {
@@ -5000,7 +5485,7 @@ class N88_RFQ_Admin {
                                 cbm: computedValues.cbm,
                                 sourcing_type: computedValues.sourcingType,
                                 timeline_type: computedValues.timelineType,
-                                inspiration: inspiration,
+                                inspiration: validInspiration, // Use validated inspiration array
                             };
                             
                             // Call onSave callback (handles AJAX and event logging)
@@ -5034,44 +5519,149 @@ class N88_RFQ_Admin {
                         }
                     };
                     
-                    // Handle inspiration image upload via file input
+                    // Handle inspiration image upload via file input - upload to WordPress media library
                     var handleInspirationFileChange = function(e) {
                         var files = e.target.files;
                         if (!files || files.length === 0) return;
                         
-                        var newInspiration = inspiration.slice();
                         var imageFiles = Array.from(files).filter(function(file) {
                             return file.type.startsWith('image/');
                         });
                         
                         if (imageFiles.length === 0) {
+                            alert('Please select image files only.');
                             e.target.value = '';
                             return;
                         }
                         
-                        var processedCount = 0;
-                        var totalFiles = imageFiles.length;
+                        // Get AJAX URL and nonce
+                        var ajaxUrl = (window.n88BoardData && window.n88BoardData.ajaxUrl) || 
+                                     (typeof ajaxurl !== 'undefined' ? ajaxurl : '<?php echo esc_url( admin_url( 'admin-ajax.php' ) ); ?>');
+                        var nonce = (window.n88BoardData && window.n88BoardData.nonce) || 
+                                   '<?php echo esc_js( N88_RFQ_Helpers::create_ajax_nonce() ); ?>';
                         
-                        imageFiles.forEach(function(file) {
-                            var reader = new FileReader();
-                            reader.onload = function(event) {
-                                newInspiration.push({
-                                    type: 'image',
-                                    url: event.target.result,
-                                    id: null,
-                                    title: file.name,
-                                    file: file
+                        if (!nonce) {
+                            console.error('Nonce not found. Available:', {
+                                n88BoardData: window.n88BoardData,
+                                ajaxurl: typeof ajaxurl !== 'undefined' ? ajaxurl : 'undefined'
+                            });
+                            alert('Security token missing. Please refresh the page and try again.');
+                            e.target.value = '';
+                            return;
+                        }
+                        
+                        // Set uploading state
+                        setIsUploadingInspiration(true);
+                        
+                        console.log('Uploading inspiration images:', imageFiles.length, 'files');
+                        
+                        // Upload each file to WordPress media library
+                        var uploadPromises = imageFiles.map(function(file) {
+                            return new Promise(function(resolve, reject) {
+                                var formData = new FormData();
+                                formData.append('action', 'n88_upload_inspiration_image');
+                                formData.append('inspiration_image', file);
+                                formData.append('nonce', nonce);
+                                
+                                console.log('Uploading file:', file.name, 'Size:', file.size, 'Type:', file.type);
+                                
+                                fetch(ajaxUrl, {
+                                    method: 'POST',
+                                    body: formData,
+                                })
+                                .then(function(response) {
+                                    if (!response.ok) {
+                                        throw new Error('HTTP error! status: ' + response.status);
+                                    }
+                                    return response.json();
+                                })
+                                .then(function(data) {
+                                    console.log('Upload response:', data);
+                                    
+                                    // Strict validation: must have success, data, id (numeric > 0), and url (non-empty string)
+                                    if (data.success && 
+                                        data.data && 
+                                        data.data.id && 
+                                        Number.isInteger(Number(data.data.id)) && 
+                                        Number(data.data.id) > 0 &&
+                                        data.data.url && 
+                                        typeof data.data.url === 'string' && 
+                                        data.data.url.trim().length > 0 &&
+                                        (data.data.url.startsWith('http://') || data.data.url.startsWith('https://'))) {
+                                        console.log('Image uploaded successfully:', {
+                                            id: data.data.id,
+                                            url: data.data.url,
+                                            title: data.data.title
+                                        });
+                                        resolve({
+                                            type: 'image',
+                                            url: data.data.url.trim(),
+                                            id: Number(data.data.id),
+                                            title: data.data.title || data.data.filename || file.name,
+                                        });
+                                    } else {
+                                        var errorMsg = (data.data && data.data.message) || 'Upload failed - missing or invalid data';
+                                        console.error('Failed to upload image:', errorMsg, {
+                                            success: data.success,
+                                            hasData: !!data.data,
+                                            hasId: !!(data.data && data.data.id),
+                                            idValue: data.data ? data.data.id : 'no data',
+                                            hasUrl: !!(data.data && data.data.url),
+                                            urlValue: data.data && data.data.url ? (data.data.url.substring(0, 50) + '...') : 'missing',
+                                        });
+                                        alert('Failed to upload ' + file.name + ': ' + errorMsg);
+                                        resolve(null);
+                                    }
+                                })
+                                .catch(function(error) {
+                                    console.error('Error uploading image:', error);
+                                    alert('Error uploading ' + file.name + ': ' + error.message);
+                                    resolve(null);
                                 });
-                                processedCount++;
-                                if (processedCount === totalFiles) {
-                                    setInspiration(newInspiration);
-                                }
-                            };
-                            reader.readAsDataURL(file);
+                            });
                         });
                         
-                        // Reset input
-                        e.target.value = '';
+                        // Wait for all uploads to complete
+                        Promise.all(uploadPromises).then(function(uploadedImages) {
+                            // Filter out failed uploads - only add images with valid IDs and URLs
+                            var validImages = uploadedImages.filter(function(img) {
+                                if (!img || typeof img !== 'object') return false;
+                                var hasId = img.id && Number.isInteger(Number(img.id)) && Number(img.id) > 0;
+                                var url = img.url ? String(img.url).trim() : '';
+                                var hasUrl = url && 
+                                    url.length > 0 &&
+                                    (url.startsWith('http://') || url.startsWith('https://')) && 
+                                    !url.startsWith('data:');
+                                var isValid = hasId && hasUrl;
+                                if (!isValid) {
+                                    console.warn('Filtering out invalid uploaded image:', img);
+                                }
+                                return isValid;
+                            });
+                            
+                            if (validImages.length > 0) {
+                                console.log('Adding', validImages.length, 'images to inspiration array');
+                                setInspiration(inspiration.concat(validImages));
+                            } else {
+                                console.warn('No images were successfully uploaded');
+                                if (uploadedImages.length > 0) {
+                                    alert('No images were successfully uploaded. Please try again.');
+                                } else if (imageFiles.length > 0) {
+                                    alert('Failed to upload images. Please check your connection and try again.');
+                                }
+                            }
+                            
+                            // Reset uploading state
+                            setIsUploadingInspiration(false);
+                            
+                            // Reset input
+                            e.target.value = '';
+                        }).catch(function(error) {
+                            console.error('Error during upload process:', error);
+                            alert('Error uploading images: ' + error.message);
+                            setIsUploadingInspiration(false);
+                            e.target.value = '';
+                        });
                     };
                     
                     if (!isOpen) return null;
@@ -5149,8 +5739,8 @@ class N88_RFQ_Admin {
                                     padding: '20px',
                                         borderBottom: '1px solid #e0e0e0',
                                         backgroundColor: '#f9f9f9',
-                                    }
-                                },
+                                }
+                            },
                                     React.createElement('div', { style: { marginBottom: '8px', fontSize: '16px', fontWeight: '600' } }, 'Item #' + itemId),
                                     React.createElement('div', { style: { fontSize: '14px', color: '#666' } }, 'Status: ' + itemStatus)
                                 ),
@@ -5160,6 +5750,34 @@ class N88_RFQ_Admin {
                                         padding: '20px',
                                     }
                                 },
+                                // Main Item Image - before SECTION: Item Facts
+                                (item.imageUrl || item.image_url || item.primary_image_url) ? React.createElement('div', {
+                                    style: {
+                                        marginBottom: '20px',
+                                        textAlign: 'center',
+                                        padding: '8px',
+                                        backgroundColor: '#f9f9f9',
+                                        borderRadius: '4px',
+                                        border: '1px solid #e0e0e0'
+                                    }
+                                },
+                                    React.createElement('img', {
+                                        src: item.imageUrl || item.image_url || item.primary_image_url,
+                                        alt: 'Item main image',
+                                        style: {
+                                            maxWidth: '100%',
+                                            maxHeight: '180px',
+                                            width: 'auto',
+                                            height: 'auto',
+                                            borderRadius: '4px',
+                                            objectFit: 'contain',
+                                            border: '1px solid #ddd'
+                                        },
+                                        onError: function(e) {
+                                            e.target.style.display = 'none';
+                                        }
+                                    })
+                                ) : null,
                                 // SECTION: Item Facts
                                 React.createElement('div', { style: { marginBottom: '32px' } },
                                     React.createElement('h3', {
@@ -5441,7 +6059,7 @@ class N88_RFQ_Admin {
                                     inspiration.length > 0 ? React.createElement('div', {
                                         style: {
                                             width: '100%',
-                                            minHeight: inspiration.length === 1 ? '300px' : '200px',
+                                            minHeight: inspiration.length === 1 ? '100px' : '80px',
                                             backgroundColor: '#f0f0f0',
                                             border: '1px solid #e0e0e0',
                                             borderRadius: '4px',
@@ -5461,21 +6079,21 @@ class N88_RFQ_Admin {
                                                 containerStyle = {
                                                     position: 'relative',
                                                     width: '100%',
-                                                    height: '300px',
+                                                    height: '100px',
                                                     flex: '0 0 100%'
                                                 };
                                             } else if (imageCount === 2) {
                                                 containerStyle = {
                                                     position: 'relative',
                                                     width: 'calc(50% - 5px)',
-                                                    height: '200px',
+                                                    height: '80px',
                                                     flex: '0 0 calc(50% - 5px)'
                                                 };
                                             } else {
                                                 containerStyle = {
                                                     position: 'relative',
                                                     width: 'calc(33.333% - 7px)',
-                                                    height: '200px',
+                                                    height: '80px',
                                                     flex: '0 0 calc(33.333% - 7px)'
                                                 };
                                             }
@@ -5561,11 +6179,13 @@ class N88_RFQ_Admin {
                                         accept: 'image/*',
                                         multiple: true,
                                         onChange: handleInspirationFileChange,
+                                        disabled: isUploadingInspiration,
                                         style: { display: 'none' }
                                     }),
                                     React.createElement('button', {
                                         type: 'button',
                                         onClick: function() {
+                                            if (isUploadingInspiration) return;
                                             var inputId = 'inspiration-file-input-' + (item.id ? String(item.id).replace(/[^a-zA-Z0-9]/g, '-') : 'default');
                                             var input = document.getElementById(inputId);
                                             if (input) {
@@ -5574,15 +6194,17 @@ class N88_RFQ_Admin {
                                                 console.error('File input not found:', inputId);
                                             }
                                         },
+                                        disabled: isUploadingInspiration,
                                         style: {
                                             padding: '8px 16px',
-                                            backgroundColor: '#f0f0f0',
+                                            backgroundColor: isUploadingInspiration ? '#ccc' : '#f0f0f0',
                                             border: '1px solid #ddd',
                                             borderRadius: '4px',
-                                            cursor: 'pointer',
+                                            cursor: isUploadingInspiration ? 'not-allowed' : 'pointer',
                                             fontSize: '13px',
+                                            opacity: isUploadingInspiration ? 0.6 : 1,
                                         }
-                                    }, '+ Add Reference Image')
+                                    }, isUploadingInspiration ? '⏳ Uploading...' : '+ Add Reference Image')
                                 ),
                                 // SECTION: Actions
                                 React.createElement('div', { style: { marginBottom: '32px' } },
@@ -5629,12 +6251,37 @@ class N88_RFQ_Admin {
                                                 // Commit 2.3.4: Open RFQ submission modal
                                                 var itemIdToSubmit = itemId || item.id || item.item_id;
                                                 console.log('Request Quote clicked for item:', itemIdToSubmit);
-                                                if (window.openRfqSubmissionModal) {
-                                                    window.openRfqSubmissionModal([itemIdToSubmit]);
-                                                } else {
-                                                    console.error('openRfqSubmissionModal function not found. Make sure you are on the board page.');
-                                                    alert('RFQ submission is only available on the board page. Please navigate to your workspace board.');
+                                                
+                                                // Retry mechanism: wait for function to be available
+                                                var retryCount = 0;
+                                                var maxRetries = 10;
+                                                var retryInterval = 100; // 100ms
+                                                
+                                                function tryOpenModal() {
+                                                    if (window.openRfqSubmissionModal && typeof window.openRfqSubmissionModal === 'function') {
+                                                        window.openRfqSubmissionModal([itemIdToSubmit]);
+                                                    } else if (retryCount < maxRetries) {
+                                                        retryCount++;
+                                                        setTimeout(tryOpenModal, retryInterval);
+                                                    } else {
+                                                        console.error('openRfqSubmissionModal function not found after retries. Current window.openRfqSubmissionModal:', typeof window.openRfqSubmissionModal);
+                                                        // Try to initialize the modal manually as fallback
+                                                        if (typeof window._openRfqSubmissionModalFull === 'function') {
+                                                            console.log('Using fallback _openRfqSubmissionModalFull function');
+                                                            var modal = document.getElementById('n88-rfq-submission-modal');
+                                                            var modalContent = document.getElementById('n88-rfq-submission-modal-content');
+                                                            if (modal && modalContent) {
+                                                                window._openRfqSubmissionModalFull([itemIdToSubmit], modal, modalContent);
+                                                            } else {
+                                                                alert('RFQ submission modal is not available. Please refresh the page and try again.');
+                                                            }
+                                                        } else {
+                                                            alert('RFQ submission is only available on the board page. Please navigate to your workspace board.');
+                                                        }
+                                                    }
                                                 }
+                                                
+                                                tryOpenModal();
                                             },
                                             style: {
                                                 flex: 1,
@@ -5708,18 +6355,18 @@ class N88_RFQ_Admin {
                                 }, 'Close'),
                                 React.createElement('button', {
                                     onClick: handleSave,
-                                    disabled: isSaving,
+                                    disabled: isSaving || isUploadingInspiration,
                                     style: {
                                         padding: '10px 20px',
                                         backgroundColor: '#0073aa',
                                         color: '#fff',
                                         border: 'none',
                                         borderRadius: '4px',
-                                        cursor: isSaving ? 'not-allowed' : 'pointer',
+                                        cursor: (isSaving || isUploadingInspiration) ? 'not-allowed' : 'pointer',
                                         fontSize: '14px',
-                                        opacity: isSaving ? 0.6 : 1,
+                                        opacity: (isSaving || isUploadingInspiration) ? 0.6 : 1,
                                     }
-                                }, isSaving ? 'Saving...' : 'Save Item Facts')
+                                }, isUploadingInspiration ? 'Uploading images...' : (isSaving ? 'Saving...' : 'Save Item Facts'))
                             )
                         )
                     );
@@ -6502,7 +7149,48 @@ class N88_RFQ_Admin {
             }, 100);
         })();
 
-        // Commit 2.3.4: RFQ Submission Modal
+        // Commit 2.3.4: RFQ Submission Modal - Ensure function is defined here too
+        // Define the function GLOBALLY if not already defined
+        if (typeof window.openRfqSubmissionModal === 'undefined') {
+            window.openRfqSubmissionModal = function(itemIds) {
+                console.log('openRfqSubmissionModal called (from real board script) with items:', itemIds);
+                if (!Array.isArray(itemIds) || itemIds.length === 0) {
+                    alert('No items selected.');
+                    return;
+                }
+                
+                // Ensure modal HTML exists
+                var modal = document.getElementById('n88-rfq-submission-modal');
+                var modalContent = document.getElementById('n88-rfq-submission-modal-content');
+                
+                if (!modal || !modalContent) {
+                    // Initialize modal HTML if not exists
+                    var modalHTML = '<div id="n88-rfq-submission-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); z-index: 20000; overflow-y: auto;"><div id="n88-rfq-submission-modal-content" style="position: relative; max-width: 600px; margin: 50px auto; background-color: #fff; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); display: flex; flex-direction: column; max-height: 90vh;"></div></div>';
+                    if (document.body) {
+                        document.body.insertAdjacentHTML('beforeend', modalHTML);
+                        modal = document.getElementById('n88-rfq-submission-modal');
+                        modalContent = document.getElementById('n88-rfq-submission-modal-content');
+                    } else {
+                        setTimeout(function() { window.openRfqSubmissionModal(itemIds); }, 100);
+                        return;
+                    }
+                }
+                
+                if (!modal || !modalContent) {
+                    console.error('RFQ modal elements not found');
+                    return;
+                }
+                
+                // Use the full implementation if available
+                if (window._openRfqSubmissionModalFull) {
+                    window._openRfqSubmissionModalFull(itemIds, modal, modalContent);
+                    return;
+                }
+                
+                alert('RFQ submission modal is not properly initialized. Please refresh the page.');
+            };
+        }
+        
         (function() {
             // Create modal HTML immediately (will be added to DOM when ready)
             var modalHTML = '<div id="n88-rfq-submission-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); z-index: 20000; overflow-y: auto;">' +
@@ -6537,7 +7225,20 @@ class N88_RFQ_Admin {
                     if (!modal || !modalContent) return;
                 }
 
-                // Build form HTML
+                // Show loading message first
+                var loadingHTML = '<div style="padding: 20px; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center; background-color: #fff;">' +
+                    '<h2 style="margin: 0; font-size: 20px; font-weight: 600; color: #333;">Request Quote' + (itemIds.length > 1 ? 's' : '') + '</h2>' +
+                    '<button onclick="closeRfqSubmissionModal()" style="background: none; border: none; font-size: 28px; cursor: pointer; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; color: #666; line-height: 1;">×</button>' +
+                    '</div>' +
+                    '<div style="flex: 1; overflow-y: auto; padding: 60px 20px; background-color: #fff; text-align: center;">' +
+                    '<div style="font-size: 16px; color: #666;">Loading...</div>' +
+                    '</div>';
+
+                modalContent.innerHTML = loadingHTML;
+                modal.style.display = 'block';
+                document.body.style.overflow = 'hidden';
+
+                // Build full form HTML
                 var formHTML = '<div style="padding: 20px; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center; background-color: #fff;">' +
                     '<h2 style="margin: 0; font-size: 20px; font-weight: 600; color: #333;">Request Quote' + (itemIds.length > 1 ? 's' : '') + '</h2>' +
                     '<button onclick="closeRfqSubmissionModal()" style="background: none; border: none; font-size: 28px; cursor: pointer; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; color: #666; line-height: 1;">×</button>' +
@@ -6550,19 +7251,25 @@ class N88_RFQ_Admin {
                     '<div id="n88-rfq-items-container"></div>' +
                     
                     // Invite Supplier section
-                    '<div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0;">' +
-                    '<h3 style="margin: 0 0 12px 0; font-size: 16px; font-weight: 600; color: #333;">Invite a Supplier</h3>' +
-                    '<p style="margin: 0 0 12px 0; font-size: 13px; color: #666;">Enter an existing supplier username or an email address.</p>' +
-                    '<input type="text" id="n88-invite-supplier" name="invite_supplier" placeholder="Username or email" style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; box-sizing: border-box;" />' +
+                    '<div style="margin-top: 0px; padding-top: 0px; border-top: 0px solid #e0e0e0;">' +
+                    '<h3 style="margin: 0px 0px 12px 0px; font-size: 16px; font-weight: 600; color: #333;">Invite Makers</h3>' +
+                    '<p style="margin: 0 0 12px 0; font-size: 13px; color: #666;">Enter existing maker username(s) or email address(es). Press Enter or click Add to create a chip. (1-5 invites)</p>' +
+                    '<div style="display: flex; gap: 8px; margin-bottom: 12px;">' +
+                    '<input type="text" id="n88-invite-supplier-input" placeholder="Username or email" style="flex: 1; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; box-sizing: border-box;" onkeypress="if(event.key===\'Enter\'){event.preventDefault();addInvitedSupplierChip();}" />' +
+                    '<button type="button" onclick="addInvitedSupplierChip()" style="padding: 10px 20px; background-color: #0073aa; color: #fff; border: none; border-radius: 4px; font-size: 14px; font-weight: 500; cursor: pointer; white-space: nowrap;">Add</button>' +
+                    '</div>' +
+                    '<div id="n88-invited-suppliers-chips" style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; min-height: 32px;"></div>' +
+                    '<input type="hidden" id="n88-invited-suppliers-json" name="invited_suppliers" value="[]" />' +
+                    '<div id="n88-invite-supplier-error" style="font-size: 12px; color: #d32f2f; margin-top: 4px; display: none;"></div>' +
                     '</div>' +
                     
                     // System Invites toggle
                     '<div style="margin-top: 24px;">' +
                     '<label style="display: flex; align-items: center; cursor: pointer;">' +
                     '<input type="checkbox" id="n88-allow-system-invites" name="allow_system_invites" style="margin-right: 8px; width: 18px; height: 18px; cursor: pointer;" onchange="updateSystemInvitesMessage()" />' +
-                    '<span style="font-size: 14px; font-weight: 500; color: #333;">Let WireFrame (OS) source suppliers for this request</span>' +
+                    '<span style="font-size: 14px; font-weight: 500; color: #333;">Let WireFrame (OS) source makers for this request</span>' +
                     '</label>' +
-                    '<div style="margin-top: 8px; font-size: 13px; color: #666; padding-left: 26px;">If enabled, Wireframe (OS) will find qualified suppliers based on your item and keywords.</div>' +
+                    '<div style="margin-top: 8px; font-size: 13px; color: #666; padding-left: 26px;">If enabled, Wireframe (OS) will find qualified makers based on your item and keywords.</div>' +
                     '<div id="n88-system-invites-message" style="margin-top: 8px; font-size: 13px; color: #666; padding-left: 26px; display: none;"></div>' +
                     '</div>' +
                     
@@ -6574,26 +7281,196 @@ class N88_RFQ_Admin {
                     '</form>' +
                     '</div>';
 
-                modalContent.innerHTML = formHTML;
-                modal.style.display = 'block';
-                document.body.style.overflow = 'hidden';
-
-                // Load item forms
-                loadItemForms(itemIds);
-                updateSystemInvitesMessage();
-            };
-
-            // Load forms for each item
-            function loadItemForms(itemIds) {
-                var container = document.getElementById('n88-rfq-items-container');
-                if (!container) return;
-
-                container.innerHTML = '';
-
-                itemIds.forEach(function(itemId, index) {
-                    var itemHTML = '<div class="n88-rfq-item-form" data-item-id="' + itemId + '" style="margin-bottom: 30px; padding-bottom: 30px; border-bottom: 1px solid #e0e0e0;">' +
-                        '<h4 style="margin: 0 0 16px 0; font-size: 15px; font-weight: 600; color: #333;">Item #' + itemId + '</h4>' +
+                // Load items first, then show form once all items are ready
+                var itemsLoaded = 0;
+                var totalItems = itemIds.length;
+                var loadedItems = [];
+                
+                if (totalItems === 0) {
+                    modalContent.innerHTML = '<div style="padding: 20px; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center; background-color: #fff;">' +
+                        '<h2 style="margin: 0; font-size: 20px; font-weight: 600; color: #333;">Request Quote</h2>' +
+                        '<button onclick="closeRfqSubmissionModal()" style="background: none; border: none; font-size: 28px; cursor: pointer; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; color: #666; line-height: 1;">×</button>' +
+                        '</div>' +
+                        '<div style="flex: 1; overflow-y: auto; padding: 60px 20px; background-color: #fff; text-align: center;">' +
+                        '<div style="font-size: 16px; color: #d32f2f;">No items selected.</div>' +
+                        '</div>';
+                    return;
+                }
+                
+                // Function to show form once all items are loaded
+                function showFormWithItems() {
+                    modalContent.innerHTML = formHTML;
+                    
+                    // Insert loaded items into container
+                    var container = document.getElementById('n88-rfq-items-container');
+                    if (container) {
+                        container.innerHTML = '';
+                        loadedItems.forEach(function(itemHTML) {
+                            container.insertAdjacentHTML('beforeend', itemHTML);
+                        });
                         
+                        // Add delivery country change listeners
+                        var countrySelects = container.querySelectorAll('select[name="delivery_country[]"]');
+                        countrySelects.forEach(function(select) {
+                            select.addEventListener('change', function() {
+                                var itemForm = select.closest('.n88-rfq-item-form');
+                                var itemId = itemForm ? itemForm.getAttribute('data-item-id') : '';
+                                var country = select.value.toUpperCase();
+                                var postalInput = itemForm ? itemForm.querySelector('input[name="delivery_postal[]"]') : null;
+                                var noteDiv = document.getElementById('n88-delivery-note-' + itemId);
+                                if (country === 'USA' || country === 'CAN') {
+                                    if (postalInput) postalInput.required = true;
+                                    if (noteDiv) {
+                                        noteDiv.style.display = 'block';
+                                        noteDiv.textContent = 'ZIP/postal code is required for US and Canada.';
+                                    }
+                                } else {
+                                    if (postalInput) postalInput.required = false;
+                                    if (noteDiv && country.length > 0) {
+                                        noteDiv.style.display = 'block';
+                                        noteDiv.textContent = 'We are not able to calculate an instant shipping estimate for this delivery location yet, but our team can get back to you with a shipping range within 24 hours.';
+                                    } else if (noteDiv) {
+                                        noteDiv.style.display = 'none';
+                                    }
+                                }
+                            });
+                        });
+                    }
+                    
+                    // Update system invites message
+                    if (window.updateSystemInvitesMessage) {
+                        setTimeout(function() { window.updateSystemInvitesMessage(); }, 100);
+                    }
+                }
+                
+                // Load all items first
+                itemIds.forEach(function(itemId, index) {
+                    // Fetch item details to get images
+                    var formData = new FormData();
+                    formData.append('action', 'n88_get_supplier_item_details');
+                    formData.append('item_id', itemId);
+                    formData.append('_ajax_nonce', '<?php echo wp_create_nonce( 'n88_get_supplier_item_details' ); ?>');
+                    
+                    fetch('<?php echo esc_url( admin_url( 'admin-ajax.php' ) ); ?>', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(function(response) { return response.json(); })
+                    .then(function(data) {
+                        var item = data.success ? data.data : null;
+                        
+                        // Get primary image URL
+                        var primaryImageUrl = item ? (item.primary_image_url || item.image_url || '') : '';
+                        
+                        // Get inspiration images
+                        var inspirationImages = item ? (item.inspiration_images || item.reference_images || []) : [];
+                        
+                        // Filter and prepare valid reference images
+                        var validReferenceImages = [];
+                        if (inspirationImages && inspirationImages.length > 0) {
+                            inspirationImages.forEach(function(img) {
+                                var imgUrl = '';
+                                var fullUrl = '';
+                                
+                                if (typeof img === 'string') {
+                                    imgUrl = img;
+                                    fullUrl = img;
+                                } else if (typeof img === 'object') {
+                                    imgUrl = img.url || img.thumbnail || img.thumb_url || '';
+                                    fullUrl = img.full_url || img.url || img.thumbnail || img.thumb_url || '';
+                                }
+                                
+                                if (imgUrl && imgUrl.trim() !== '' && (imgUrl.startsWith('http://') || imgUrl.startsWith('https://'))) {
+                                    validReferenceImages.push({
+                                        url: imgUrl,
+                                        fullUrl: fullUrl || imgUrl
+                                    });
+                                }
+                            });
+                        }
+                        
+                        // Build image gallery layout: left reference images, center main image, right reference images
+                        // Always show the gallery box
+                        var imageGalleryHTML = '';
+                        
+                        // Split reference images into left and right
+                        var leftImages = [];
+                        var rightImages = [];
+                        validReferenceImages.forEach(function(img, index) {
+                            if (index % 2 === 0) {
+                                leftImages.push(img);
+                            } else {
+                                rightImages.push(img);
+                            }
+                        });
+                        
+                        // Build left column (reference images)
+                        var leftColumnHTML = '<div style="display: flex; flex-direction: column; gap: 12px; align-items: center; justify-content: center; min-width: 120px;">';
+                        if (leftImages.length > 0) {
+                            leftImages.forEach(function(img, idx) {
+                                var imgId = 'n88-rfq-ref-left-' + itemId + '-' + idx;
+                                leftColumnHTML += '<div style="position: relative; width: 100px; height: 100px;">' +
+                                    '<img id="' + imgId + '" ' +
+                                    'src="' + img.url.replace(/"/g, '&quot;') + '" ' +
+                                    'data-full-url="' + img.fullUrl.replace(/"/g, '&quot;') + '" ' +
+                                    'onerror="this.onerror=null; this.src=\'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'%3E%3Crect fill=\'%23000\' width=\'100\' height=\'100\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%23fff\' font-size=\'12\'%3Ereference photo%3C/text%3E%3C/svg%3E\';" ' +
+                                    'style="width: 100px; height: 100px; object-fit: cover; border-radius: 4px; border: 2px solid #ddd; cursor: pointer; transition: all 0.2s; background-color: #000;" ' +
+                                    'onmouseover="this.style.borderColor=\'#0073aa\'; this.style.transform=\'scale(1.05)\'; this.style.boxShadow=\'0 2px 8px rgba(0,115,170,0.3)\';" ' +
+                                    'onmouseout="this.style.borderColor=\'#ddd\'; this.style.transform=\'scale(1)\'; this.style.boxShadow=\'none\';" ' +
+                                    'onclick="(function(elem){var url=elem.getAttribute(\'data-full-url\');if(url&&url.trim()){try{window.open(url,\'_blank\',\'noopener,noreferrer\');}catch(err){console.error(\'Error opening image:\',err);}}else{console.error(\'No URL found for image\');}})(this);" ' +
+                                    'title="Click to view full size" ' +
+                                    'alt="Reference photo" />' +
+                                    '</div>';
+                            });
+                        }
+                        leftColumnHTML += '</div>';
+                        
+                        // Build center column (main image)
+                        var centerColumnHTML = '<div style="flex: 1; display: flex; align-items: center; justify-content: center; min-height: 300px; padding: 0 20px; max-width: 500px;">';
+                        if (primaryImageUrl) {
+                            centerColumnHTML += '<img src="' + primaryImageUrl.replace(/"/g, '&quot;') + '" ' +
+                                'onerror="this.onerror=null; this.src=\'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'400\' height=\'300\'%3E%3Crect fill=\'%23f0f0f0\' width=\'400\' height=\'300\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%23999\' font-size=\'14\'%3EItem Image%3C/text%3E%3C/svg%3E\';" ' +
+                                'style="max-width: 100%; max-height: 350px; width: auto; height: auto; border-radius: 4px; border: 1px solid #e0e0e0; object-fit: contain; box-shadow: 0 2px 8px rgba(0,0,0,0.1);" ' +
+                                'alt="Item main image" />';
+                        } else {
+                            centerColumnHTML += '<div style="width: 100%; height: 300px; background-color: #f0f0f0; border-radius: 4px; border: 1px solid #e0e0e0; display: flex; align-items: center; justify-content: center; color: #999;">No main image available</div>';
+                        }
+                        centerColumnHTML += '</div>';
+                        
+                        // Build right column (reference images)
+                        var rightColumnHTML = '<div style="display: flex; flex-direction: column; gap: 12px; align-items: center; justify-content: center; min-width: 120px;">';
+                        if (rightImages.length > 0) {
+                            rightImages.forEach(function(img, idx) {
+                                var imgId = 'n88-rfq-ref-right-' + itemId + '-' + idx;
+                                rightColumnHTML += '<div style="position: relative; width: 100px; height: 100px;">' +
+                                    '<img id="' + imgId + '" ' +
+                                    'src="' + img.url.replace(/"/g, '&quot;') + '" ' +
+                                    'data-full-url="' + img.fullUrl.replace(/"/g, '&quot;') + '" ' +
+                                    'onerror="this.onerror=null; this.src=\'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'%3E%3Crect fill=\'%23000\' width=\'100\' height=\'100\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%23fff\' font-size=\'12\'%3Ereference photo%3C/text%3E%3C/svg%3E\';" ' +
+                                    'style="width: 100px; height: 100px; object-fit: cover; border-radius: 4px; border: 2px solid #ddd; cursor: pointer; transition: all 0.2s; background-color: #000;" ' +
+                                    'onmouseover="this.style.borderColor=\'#0073aa\'; this.style.transform=\'scale(1.05)\'; this.style.boxShadow=\'0 2px 8px rgba(0,115,170,0.3)\';" ' +
+                                    'onmouseout="this.style.borderColor=\'#ddd\'; this.style.transform=\'scale(1)\'; this.style.boxShadow=\'none\';" ' +
+                                    'onclick="(function(elem){var url=elem.getAttribute(\'data-full-url\');if(url&&url.trim()){try{window.open(url,\'_blank\',\'noopener,noreferrer\');}catch(err){console.error(\'Error opening image:\',err);}}else{console.error(\'No URL found for image\');}})(this);" ' +
+                                    'title="Click to view full size" ' +
+                                    'alt="Reference photo" />' +
+                                    '</div>';
+                            });
+                        }
+                        rightColumnHTML += '</div>';
+                        
+                        // Always combine into gallery layout (box always visible)
+                        imageGalleryHTML = '<div style="margin-bottom: 24px; display: flex; gap: 16px; align-items: flex-start; justify-content: center; padding: 16px; background-color: #fafafa; border-radius: 4px; border: 1px solid #e0e0e0;">' +
+                            leftColumnHTML +
+                            centerColumnHTML +
+                            rightColumnHTML +
+                            '</div>';
+                        
+                        var itemHTML = '<div class="n88-rfq-item-form" data-item-id="' + itemId + '" style="margin-bottom: 30px; padding-bottom: 30px; border-bottom: 1px solid #e0e0e0;">' +
+                            '<h4 style="margin: 0 0 16px 0; font-size: 15px; font-weight: 600; color: #333;">Item #' + itemId + '</h4>' +
+                            
+                            // Image gallery: left reference images, center main image, right reference images
+                            imageGalleryHTML +
+                            
                         // Quantity
                         '<div style="margin-bottom: 16px;">' +
                         '<label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 6px; color: #333;">Quantity <span style="color: #d32f2f;">*</span></label>' +
@@ -6617,40 +7494,98 @@ class N88_RFQ_Admin {
                         // Delivery
                         '<div style="margin-bottom: 16px;">' +
                         '<label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 6px; color: #333;">Delivery Country <span style="color: #d32f2f;">*</span></label>' +
-                        '<input type="text" name="delivery_country[]" maxlength="2" placeholder="US, CA, GB, etc." required style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; box-sizing: border-box; text-transform: uppercase;" />' +
+                        '<select name="delivery_country[]" required style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; box-sizing: border-box;">' +
+                        '<option value="">Select Country</option>' +
+                        '<option value="USA">USA</option>' +
+                        '<option value="CAN">CAN</option>' +
+                        '<option value="CHINA">CHINA</option>' +
+                        '<option value="VIETNAM">VIETNAM</option>' +
+                        '<option value="EUROPE">EUROPE</option>' +
+                        '<option value="AFRICA">AFRICA</option>' +
+                        '</select>' +
                         '</div>' +
                         
                         '<div style="margin-bottom: 16px;">' +
                         '<label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 6px; color: #333;">ZIP/Postal Code</label>' +
-                        '<input type="text" name="delivery_postal[]" placeholder="Required for US/CA" style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; box-sizing: border-box;" />' +
+                        '<input type="text" name="delivery_postal[]" placeholder="Required for USA/CAN" style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; box-sizing: border-box;" />' +
                         '<div id="n88-delivery-note-' + itemId + '" style="margin-top: 8px; font-size: 12px; color: #666; display: none;"></div>' +
                         '</div>' +
                         '</div>';
-
-                    container.insertAdjacentHTML('beforeend', itemHTML);
+                        
+                        container.insertAdjacentHTML('beforeend', itemHTML);
+                    })
+                    .catch(function(error) {
+                        console.error('Error fetching item details for item ' + itemId + ':', error);
+                        // Still create the form without images
+                        var itemHTML = '<div class="n88-rfq-item-form" data-item-id="' + itemId + '" style="margin-bottom: 30px; padding-bottom: 30px; border-bottom: 1px solid #e0e0e0;">' +
+                            '<h4 style="margin: 0 0 16px 0; font-size: 15px; font-weight: 600; color: #333;">Item #' + itemId + '</h4>' +
+                            
+                            // Quantity
+                            '<div style="margin-bottom: 16px;">' +
+                            '<label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 6px; color: #333;">Quantity <span style="color: #d32f2f;">*</span></label>' +
+                            '<input type="number" name="quantity[]" min="1" required style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; box-sizing: border-box;" />' +
+                            '</div>' +
+                            
+                            // Dimensions
+                            '<div style="margin-bottom: 16px;">' +
+                            '<label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 6px; color: #333;">Dimensions <span style="color: #d32f2f;">*</span></label>' +
+                            '<div style="display: flex; gap: 8px; align-items: center; max-width: 50%;">' +
+                            '<input type="number" name="width[]" step="0.01" min="0.01" placeholder="Width" required style="flex: 1; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" />' +
+                            '<input type="number" name="depth[]" step="0.01" min="0.01" placeholder="Depth" required style="flex: 1; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" />' +
+                            '<input type="number" name="height[]" step="0.01" min="0.01" placeholder="Height" required style="flex: 1; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" />' +
+                            '<select name="dimension_unit[]" required style="flex: 0 0 80px; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; box-sizing: border-box;">' +
+                            '<option value="in">Inches</option>' +
+                            '<option value="cm">Centimeters</option>' +
+                            '</select>' +
+                            '</div>' +
+                            '</div>' +
+                            
+                            // Delivery
+                            '<div style="margin-bottom: 16px;">' +
+                            '<label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 6px; color: #333;">Delivery Country <span style="color: #d32f2f;">*</span></label>' +
+                            '<select name="delivery_country[]" required style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; box-sizing: border-box;">' +
+                            '<option value="">Select Country</option>' +
+                            '<option value="USA">USA</option>' +
+                            '<option value="CAN">CAN</option>' +
+                            '<option value="CHINA">CHINA</option>' +
+                            '<option value="VIETNAM">VIETNAM</option>' +
+                            '<option value="EUROPE">EUROPE</option>' +
+                            '<option value="AFRICA">AFRICA</option>' +
+                            '</select>' +
+                            '</div>' +
+                            
+                            '<div style="margin-bottom: 16px;">' +
+                            '<label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 6px; color: #333;">ZIP/Postal Code</label>' +
+                            '<input type="text" name="delivery_postal[]" placeholder="Required for USA/CAN" style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; box-sizing: border-box;" />' +
+                            '<div id="n88-delivery-note-' + itemId + '" style="margin-top: 8px; font-size: 12px; color: #666; display: none;"></div>' +
+                            '</div>' +
+                            '</div>';
+                        
+                        container.insertAdjacentHTML('beforeend', itemHTML);
+                    });
                 });
 
                 // Add delivery country change listeners
-                var countryInputs = container.querySelectorAll('input[name="delivery_country[]"]');
-                countryInputs.forEach(function(input) {
-                    input.addEventListener('input', function() {
-                        var itemForm = input.closest('.n88-rfq-item-form');
+                var countrySelects = container.querySelectorAll('select[name="delivery_country[]"]');
+                countrySelects.forEach(function(select) {
+                    select.addEventListener('change', function() {
+                        var itemForm = select.closest('.n88-rfq-item-form');
                         var itemId = itemForm ? itemForm.getAttribute('data-item-id') : '';
-                        var country = input.value.toUpperCase();
+                        var country = select.value.toUpperCase();
                         var postalInput = itemForm ? itemForm.querySelector('input[name="delivery_postal[]"]') : null;
                         var noteDiv = document.getElementById('n88-delivery-note-' + itemId);
 
-                        if (country === 'US' || country === 'CA') {
+                        if (country === 'USA' || country === 'CAN') {
                             if (postalInput) postalInput.required = true;
                             if (noteDiv) {
                                 noteDiv.style.display = 'block';
-                                noteDiv.textContent = 'ZIP/postal code is required for US and Canada.';
+                                noteDiv.textContent = 'ZIP/postal code is required for USA and Canada.';
                             }
                         } else {
                             if (postalInput) postalInput.required = false;
-                            if (noteDiv && country.length === 2) {
+                            if (noteDiv && country.length > 0) {
                                 noteDiv.style.display = 'block';
-                                noteDiv.textContent = 'We\'re not able to calculate an instant shipping estimate for this delivery location yet, but our team can get back to you with a shipping range within 24 hours.';
+                                noteDiv.textContent = "We're not able to calculate an instant shipping estimate for this delivery location yet, but our team can get back to you with a shipping range within 24 hours.";
                             } else if (noteDiv) {
                                 noteDiv.style.display = 'none';
                             }
@@ -6670,7 +7605,7 @@ class N88_RFQ_Admin {
                 if (checkbox.checked) {
                     messageDiv.style.display = 'block';
                     if (inviteInput && inviteInput.value.trim()) {
-                        messageDiv.textContent = 'We\'ll invite 2 additional suppliers in 24 hours.';
+                        messageDiv.textContent = 'We\'ll invite 2 additional makers in 24 hours.';
                     } else {
                         messageDiv.textContent = 'We sent your request to 2 suppliers that match your category and keywords.';
                     }
@@ -6715,7 +7650,8 @@ class N88_RFQ_Admin {
                     var depth = parseFloat(itemForm.querySelector('input[name="depth[]"]').value);
                     var height = parseFloat(itemForm.querySelector('input[name="height[]"]').value);
                     var dimensionUnit = itemForm.querySelector('select[name="dimension_unit[]"]').value;
-                    var deliveryCountry = itemForm.querySelector('input[name="delivery_country[]"]').value.toUpperCase().trim();
+                    var deliveryCountrySelect = itemForm.querySelector('select[name="delivery_country[]"]');
+                    var deliveryCountry = deliveryCountrySelect ? deliveryCountrySelect.value.toUpperCase().trim() : '';
                     var deliveryPostal = itemForm.querySelector('input[name="delivery_postal[]"]').value.trim();
 
                     items.push({
@@ -6736,7 +7672,7 @@ class N88_RFQ_Admin {
                 // Validate: Scenario B
                 if (!inviteSupplier && !allowSystemInvites) {
                     errorsDiv.style.display = 'block';
-                    errorsDiv.textContent = 'Please invite a supplier or allow the system to invite suppliers.';
+                    errorsDiv.textContent = 'Please invite a maker or allow the system to invite makers.';
                     submitBtn.disabled = false;
                     submitBtn.textContent = 'Submit RFQ';
                     return false;

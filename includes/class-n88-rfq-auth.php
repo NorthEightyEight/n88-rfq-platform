@@ -90,7 +90,7 @@ class N88_RFQ_Auth {
         if ( ! get_role( 'n88_designer' ) ) {
         add_role(
                 'n88_designer',
-            __( 'Designer', 'n88-rfq' ),
+            __( 'Creator', 'n88-rfq' ),
             array(
                 'read' => true,
                 'upload_files' => true,
@@ -106,7 +106,7 @@ class N88_RFQ_Auth {
         if ( ! get_role( 'n88_supplier_admin' ) ) {
             add_role(
                 'n88_supplier_admin',
-                __( 'Supplier Admin', 'n88-rfq' ),
+                __( 'Maker', 'n88-rfq' ),
                 array(
                     'read' => true,
                     'n88_view_supplier_queue' => true,
@@ -209,11 +209,11 @@ class N88_RFQ_Auth {
                         <div style="display: flex; gap: 20px; margin-top: 8px;">
                             <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: normal;">
                                 <input type="radio" name="user_role" value="n88_designer" checked required style="margin: 0;">
-                                <span>Designer</span>
+                                <span>Creator</span>
                             </label>
                             <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: normal;">
                                 <input type="radio" name="user_role" value="n88_supplier_admin" required style="margin: 0;">
-                                <span>Supplier</span>
+                                <span>Maker</span>
                             </label>
                         </div>
                     </div>
@@ -371,7 +371,7 @@ class N88_RFQ_Auth {
         ?>
         <div class="n88-auth-container n88-login-container">
             <div class="n88-auth-form-wrapper">
-                <h2 class="n88-auth-title">Designer Login</h2>
+                <h2 class="n88-auth-title">Login Your Account</h2>
                 
                 <?php if ( $message ) : ?>
                     <div class="n88-auth-message n88-auth-message-<?php echo esc_attr( $message_type ); ?>">
@@ -857,7 +857,7 @@ class N88_RFQ_Auth {
         if ( $is_designer && ! $is_system_operator ) {
             // Only block if it's a frontend route, not WordPress admin
             if ( ( strpos( $path, '/admin/' ) !== false || strpos( $path, '/supplier/' ) !== false ) && strpos( $path, '/wp-admin' ) === false ) {
-                self::render_403_error( 'Access Denied', 'You do not have permission to access this page. Designers are restricted from accessing admin and supplier areas.' );
+                self::render_403_error( 'Access Denied', 'You do not have permission to access this page. Creators are restricted from accessing super admin and maker areas.' );
                 exit;
             }
         }
@@ -868,7 +868,7 @@ class N88_RFQ_Auth {
                 $query_params = isset( $parsed_url['query'] ) ? $parsed_url['query'] : '';
                 parse_str( $query_params, $query_vars );
                 if ( isset( $query_vars['scope'] ) && $query_vars['scope'] === 'global' ) {
-                    self::render_403_error( 'Access Denied', 'You do not have permission to access the global queue. Suppliers can only access the supplier queue.' );
+                    self::render_403_error( 'Access Denied', 'You do not have permission to access the global queue. Makers can only access the maker queue.' );
                     exit;
                 }
             }
@@ -918,7 +918,7 @@ class N88_RFQ_Auth {
             if ( ! in_array( $query_vars['page'], $allowed_pages, true ) ) {
                 // Check if it's a supplier or admin queue page
                 if ( strpos( $query_vars['page'], 'supplier' ) !== false || strpos( $query_vars['page'], 'admin-queue' ) !== false ) {
-                    self::render_403_error( 'Access Denied', 'You do not have permission to access this page. Designers are restricted from accessing admin and supplier areas.' );
+                    self::render_403_error( 'Access Denied', 'You do not have permission to access this page. Creators are restricted from accessing super admin and maker areas.' );
                     exit;
                 }
             }
@@ -928,7 +928,7 @@ class N88_RFQ_Auth {
         if ( $is_supplier && ! $is_system_operator ) {
             if ( strpos( $query_vars['page'], 'admin-queue' ) !== false || strpos( $query_vars['page'], 'n88-rfq-role-management' ) !== false ) {
                 if ( isset( $query_vars['scope'] ) && $query_vars['scope'] === 'global' ) {
-                    self::render_403_error( 'Access Denied', 'You do not have permission to access the global queue. Suppliers can only access the supplier queue.' );
+                    self::render_403_error( 'Access Denied', 'You do not have permission to access the global queue. Makers can only access the maker queue.' );
                     exit;
                 }
             }
@@ -950,7 +950,7 @@ class N88_RFQ_Auth {
         
         // Allow designers and system operators
         if ( ! $is_designer && ! $is_system_operator ) {
-            return '<p>Access denied. Designer or System Operator account required.</p>';
+            return '<p>Access denied. Creator or System Operator account required.</p>';
         }
 
         $user_id = $current_user->ID;
@@ -1007,7 +1007,7 @@ class N88_RFQ_Auth {
         
         // Allow designers and system operators
         if ( ! $is_designer && ! $is_system_operator ) {
-            wp_die( 'Access denied. Designer or System Operator account required.', 'Access Denied', array( 'response' => 403 ) );
+            wp_die( 'Access denied. Creator or System Operator account required.', 'Access Denied', array( 'response' => 403 ) );
         }
 
         // Show workspace page (no automatic redirect to board)
@@ -1020,7 +1020,7 @@ class N88_RFQ_Auth {
     public function render_supplier_queue( $atts = array() ) {
         // Allow admins to edit pages even if they don't have supplier role
         if ( is_admin() && current_user_can( 'edit_pages' ) ) {
-            return '<p><em>Supplier Queue page - This shortcode will display the supplier queue for authorized users.</em></p>';
+            return '<p><em>Maker Queue page - This shortcode will display the maker queue for authorized users.</em></p>';
         }
 
         // Check if user is logged in and is a supplier or system operator
@@ -1034,7 +1034,7 @@ class N88_RFQ_Auth {
         $is_system_operator = in_array( 'n88_system_operator', $current_user->roles, true );
         
         if ( ! $is_supplier && ! $is_system_operator ) {
-            wp_die( 'Access denied. Supplier or System Operator account required.', 'Access Denied', array( 'response' => 403 ) );
+            wp_die( 'Access denied. Maker or System Operator account required.', 'Access Denied', array( 'response' => 403 ) );
         }
 
         // Read filter values from URL query parameters
@@ -1048,7 +1048,7 @@ class N88_RFQ_Auth {
         <div class="n88-supplier-queue" style="max-width: 1400px; margin: 0 auto; padding: 40px 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;">
             <!-- Header -->
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; padding-bottom: 15px; border-bottom: 2px solid #e0e0e0;">
-                <h1 style="margin: 0; font-size: 24px; font-weight: 600; color: #333;">NorthEightyEight — Supplier Queue</h1>
+                <h1 style="margin: 0; font-size: 24px; font-weight: 600; color: #333;">Maker Queue</h1>
                 <div style="font-size: 14px; color: #666;">
                     Logged in: <?php echo esc_html( $current_user->display_name ); ?>
                 </div>
@@ -1206,7 +1206,7 @@ class N88_RFQ_Auth {
             <!-- Rules Note -->
             <div style="margin-top: 30px; padding: 15px; background-color: #f0f0f0; border-left: 4px solid #0073aa; border-radius: 4px;">
                 <p style="margin: 0; font-size: 13px; color: #666; font-style: italic;">
-                    <strong>Rules:</strong> Supplier sees ONLY items routed to them. No designer identity shown.
+                    <strong>Rules:</strong> Maker sees ONLY items routed to them. No creator identity shown.
                 </p>
             </div>
         </div>
@@ -1315,28 +1315,64 @@ class N88_RFQ_Auth {
                     
                     var item = data.data;
                     
-                    // Format dimensions
+                    // Format dimensions (support both w/d/h and width/depth/height formats)
                     var dimsText = '—';
                     if (item.dimensions) {
-                        var w = item.dimensions.w || '—';
-                        var d = item.dimensions.d || '—';
-                        var h = item.dimensions.h || '—';
+                        // Support both formats: {w, d, h, unit} and {width, depth, height, unit}
+                        var w = item.dimensions.width || item.dimensions.w || '—';
+                        var d = item.dimensions.depth || item.dimensions.d || '—';
+                        var h = item.dimensions.height || item.dimensions.h || '—';
                         var unit = item.dimensions.unit || '';
-                        dimsText = 'W: ' + w + ' ' + unit + ' × D: ' + d + ' ' + unit + ' × H: ' + h + ' ' + unit;
+                        if (w !== '—' && d !== '—' && h !== '—') {
+                            dimsText = 'W: ' + w + ' ' + unit + ' × D: ' + d + ' ' + unit + ' × H: ' + h + ' ' + unit;
+                        }
                     }
                     
                     // Format sourcing_type and timeline_type
                     var sourcingTypeText = item.sourcing_type || '—';
                     var timelineTypeText = item.timeline_type || '—';
                     
-                    // Build reference images HTML
+                    // Build reference images HTML - improved with better click handling
                     var refImagesHTML = '';
-                    if (item.reference_images && item.reference_images.length > 0) {
-                        refImagesHTML = item.reference_images.map(function(img) {
-                            return '<img src="' + img.url + '" style="width: 100px; height: 100px; object-fit: cover; border-radius: 4px; border: 1px solid #e0e0e0; cursor: pointer;" onclick="window.open(\'' + img.full_url + '\', \'_blank\');" title="Click to view full size" />';
-                        }).join('');
+                    var refImages = item.reference_images || item.inspiration_images || [];
+                    if (refImages && refImages.length > 0) {
+                        refImagesHTML = '<div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px;">';
+                        refImages.forEach(function(img, index) {
+                            // Handle both object format {url, full_url} and string format
+                            var imgUrl = '';
+                            var fullUrl = '';
+                            
+                            if (typeof img === 'string') {
+                                imgUrl = img;
+                                fullUrl = img;
+                            } else if (typeof img === 'object') {
+                                imgUrl = img.url || img.thumbnail || img.thumb_url || '';
+                                fullUrl = img.full_url || img.url || img.thumbnail || img.thumb_url || '';
+                            }
+                            
+                            // Only add image if we have a valid URL
+                            if (imgUrl && imgUrl.trim() !== '' && (imgUrl.startsWith('http://') || imgUrl.startsWith('https://'))) {
+                                var imgId = 'n88-ref-img-view-' + item.item_id + '-' + index;
+                                refImagesHTML += '<div style="position: relative;">' +
+                                    '<img id="' + imgId + '" ' +
+                                    'src="' + imgUrl.replace(/"/g, '&quot;') + '" ' +
+                                    'data-full-url="' + (fullUrl || imgUrl).replace(/"/g, '&quot;') + '" ' +
+                                    'onerror="this.onerror=null; this.src=\'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'%3E%3Crect fill=\'%23f0f0f0\' width=\'100\' height=\'100\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%23999\' font-size=\'12\'%3EImage%3C/text%3E%3C/svg%3E\';" ' +
+                                    'style="width: 100px; height: 100px; object-fit: cover; border-radius: 4px; border: 2px solid #e0e0e0; cursor: pointer; transition: all 0.2s; background-color: #f0f0f0;" ' +
+                                    'onmouseover="this.style.borderColor=\'#0073aa\'; this.style.transform=\'scale(1.05)\';" ' +
+                                    'onmouseout="this.style.borderColor=\'#e0e0e0\'; this.style.transform=\'scale(1)\';" ' +
+                                    'onclick="(function(e){var url=e.getAttribute(\'data-full-url\');if(url&&url.trim()){window.open(url,\'_blank\',\'noopener,noreferrer\');}})(this);" ' +
+                                    'title="Click to view full size" ' +
+                                    'alt="Reference image ' + (index + 1) + '" />' +
+                                    '</div>';
+                            }
+                        });
+                        refImagesHTML += '</div>';
+                        if (refImagesHTML === '<div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px;"></div>') {
+                            refImagesHTML = '<div style="color: #999; font-size: 12px; padding: 8px;">No valid reference images available</div>';
+                        }
                     } else {
-                        refImagesHTML = '<div style="color: #999; font-size: 12px;">No reference images available</div>';
+                        refImagesHTML = '<div style="color: #999; font-size: 12px; padding: 8px;">No reference images available</div>';
                     }
                     
                     // Build media links HTML
@@ -1357,15 +1393,15 @@ class N88_RFQ_Auth {
                     
                     // Build modal HTML - Read-only Supplier RFQ Detail View (Commit 2.3.2)
                     var modalHTML = '<div style="padding: 20px; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center; background-color: #fff;">' +
-                        '<h2 style="margin: 0; font-size: 20px; font-weight: 600; color: #333;">Item #' + item.item_id + ' <span style="color: #666; font-weight: 400;">(Supplier View)</span></h2>' +
+                        '<h2 style="margin: 0; font-size: 20px; font-weight: 600; color: #333;">Item #' + item.item_id + ' <span style="color: #666; font-weight: 400;">(Maker View)</span></h2>' +
                         '<button onclick="closeBidModal()" style="background: none; border: none; font-size: 28px; cursor: pointer; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; color: #666; line-height: 1;">×</button>' +
                         '</div>' +
                         '<div style="flex: 1; overflow-y: auto; padding: 0; background-color: #fff;">' +
                         '<div style="padding: 20px;">' +
                         
-                        // Item Image
-                        (item.image_url ? '<div style="margin-bottom: 24px; text-align: center;">' +
-                            '<img src="' + item.image_url + '" style="max-width: 100%; max-height: 300px; border-radius: 4px; border: 1px solid #e0e0e0;" />' +
+                        // Item Image - reduced size
+                        (item.image_url || item.primary_image_url ? '<div style="margin-bottom: 16px; text-align: center;">' +
+                            '<img src="' + (item.primary_image_url || item.image_url) + '" style="max-width: 100%; max-height: 180px; width: auto; height: auto; border-radius: 4px; border: 1px solid #e0e0e0; object-fit: contain;" />' +
                             '</div>' : '') +
                         
                         // Item Title
@@ -1384,7 +1420,7 @@ class N88_RFQ_Auth {
                         (item.route_label ? '<div style="margin-bottom: 16px;">' +
                             '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #666;">Routing:</label>' +
                             '<div style="padding: 10px 12px; background-color: #e3f2fd; border-radius: 4px; font-size: 14px; border: 1px solid #90caf9; color: #1976d2;">' + item.route_label + '</div>' +
-                            '<div style="margin-top: 6px; font-size: 12px; color: #666; font-style: italic;">Designer identity remains hidden until award.</div>' +
+                            '<div style="margin-top: 6px; font-size: 12px; color: #666; font-style: italic;">Creator identity remains hidden until award.</div>' +
                             '</div>' : '') +
                         
                         // Delivery Context
@@ -1427,19 +1463,25 @@ class N88_RFQ_Auth {
                         // Reference Images
                         '<div style="margin-bottom: 24px;">' +
                         '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #666;">Reference Images:</label>' +
-                        '<div style="display: flex; gap: 12px; flex-wrap: wrap;">' + refImagesHTML + '</div>' +
+                        refImagesHTML +
                         '</div>' +
                         
-                        // Media Links
-                        '<div style="margin-bottom: 24px;">' +
-                        '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #666;">Media Links:</label>' +
-                        mediaLinksHTML +
-                        '</div>' +
+                        // // Media Links
+                        // '<div style="margin-bottom: 24px;">' +
+                        // '<label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #666;">Media Links:</label>' +
+                        // mediaLinksHTML +
+                        // '</div>' +
                         
                         '</div>' +
-                        // Footer - Start Bid button (Commit 2.3.3)
-                        '<div style="padding: 20px; border-top: 1px solid #e0e0e0; background-color: #fff; display: flex; justify-content: center;">' +
-                        '<button onclick="openBidFormModal(' + item.item_id + ')" style="padding: 12px 24px; background-color: #0073aa; color: #fff; border: none; border-radius: 4px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background-color 0.2s;">Start Bid</button>' +
+                        // Footer - Start Bid / Withdraw Bid button (Commit 2.3.3/2.3.5)
+                        '<div style="padding: 20px; border-top: 1px solid #e0e0e0; background-color: #fff; display: flex; justify-content: center; gap: 12px; flex-wrap: wrap;">' +
+                        (item.bid_status === 'submitted' ? 
+                            '<div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">' +
+                            '<div style="padding: 12px 24px; background-color: #e8f5e9; color: #2e7d32; border: 1px solid #4caf50; border-radius: 4px; font-size: 14px; font-weight: 600;">✓ Bid Already Submitted</div>' +
+                            '<button onclick="withdrawBid(' + item.item_id + ')" style="padding: 12px 24px; background-color: #dc3545; color: #fff; border: none; border-radius: 4px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background-color 0.2s;">Withdraw Bid</button>' +
+                            '</div>' :
+                            '<button onclick="openBidFormModal(' + item.item_id + ')" style="padding: 12px 24px; background-color: #0073aa; color: #fff; border: none; border-radius: 4px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background-color 0.2s;">Start Bid</button>'
+                        ) +
                         '</div>';
                     
                     modalContent.innerHTML = modalHTML;
@@ -1462,6 +1504,33 @@ class N88_RFQ_Auth {
             
             // Commit 2.3.3: Open bid form modal
             function openBidFormModal(itemId) {
+                // Check if bid already submitted (Commit 2.3.5)
+                var formData = new FormData();
+                formData.append('action', 'n88_get_supplier_item_details');
+                formData.append('item_id', itemId);
+                formData.append('_ajax_nonce', '<?php echo wp_create_nonce( 'n88_get_supplier_item_details' ); ?>');
+                
+                fetch('<?php echo esc_url( admin_url( 'admin-ajax.php' ) ); ?>', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
+                    if (data.success && data.data.bid_status === 'submitted') {
+                        alert('You\'ve already submitted a bid for this item.');
+                        return;
+                    }
+                    // Continue with opening modal
+                    openBidFormModalInternal(itemId);
+                })
+                .catch(function(error) {
+                    console.error('Error checking bid status:', error);
+                    // Continue with opening modal if check fails
+                    openBidFormModalInternal(itemId);
+                });
+            }
+            
+            function openBidFormModalInternal(itemId) {
                 var modal = document.getElementById('n88-supplier-bid-form-modal');
                 var modalContent = document.getElementById('n88-supplier-bid-form-modal-content');
                 
@@ -1470,18 +1539,164 @@ class N88_RFQ_Auth {
                 // Store item ID for form submission
                 modal.setAttribute('data-item-id', itemId);
                 
-                // Build bid form modal HTML
-                var modalHTML = '<div style="padding: 20px; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center; background-color: #fff;">' +
-                    '<h2 style="margin: 0; font-size: 20px; font-weight: 600; color: #333;">Submit Bid - Item #' + itemId + '</h2>' +
-                    '<button onclick="closeBidFormModal()" style="background: none; border: none; font-size: 28px; cursor: pointer; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; color: #666; line-height: 1;">×</button>' +
-                    '</div>' +
-                    '<div style="flex: 1; overflow-y: auto; padding: 0; background-color: #fff;">' +
-                    '<form id="n88-bid-form" style="padding: 20px;" onsubmit="return validateAndSubmitBid(event);">' +
+                // Show loading state
+                modalContent.innerHTML = '<div style="padding: 40px; text-align: center; color: #666;">Loading item details...</div>';
+                modal.style.display = 'block';
+                document.body.style.overflow = 'hidden';
+                
+                // Fetch item details to get images
+                var formData = new FormData();
+                formData.append('action', 'n88_get_supplier_item_details');
+                formData.append('item_id', itemId);
+                formData.append('_ajax_nonce', '<?php echo wp_create_nonce( 'n88_get_supplier_item_details' ); ?>');
+                
+                fetch('<?php echo esc_url( admin_url( 'admin-ajax.php' ) ); ?>', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(function(response) {
+                    return response.json();
+                })
+                .then(function(data) {
+                    if (!data.success) {
+                        modalContent.innerHTML = '<div style="padding: 40px; text-align: center; color: #d32f2f;">' + 
+                            '<p style="margin-bottom: 20px;">' + (data.data && data.data.message ? data.data.message : 'Error loading item details') + '</p>' +
+                            '<button onclick="closeBidFormModal()" style="padding: 8px 16px; background-color: #0073aa; color: #fff; border: none; border-radius: 4px; cursor: pointer;">Close</button>' +
+                            '</div>';
+                        return;
+                    }
+                    
+                    var item = data.data;
+                    
+                    // Get primary image URL (use standardized key, fallback to legacy)
+                    var primaryImageUrl = item.primary_image_url || item.image_url || '';
+                    
+                    // Get inspiration images (use standardized key, fallback to legacy)
+                    var inspirationImages = item.inspiration_images || item.reference_images || [];
+                    
+                    // Filter and prepare valid reference images
+                    var validReferenceImages = [];
+                    if (inspirationImages && inspirationImages.length > 0) {
+                        inspirationImages.forEach(function(img) {
+                            var imgUrl = '';
+                            var fullUrl = '';
+                            
+                            if (typeof img === 'string') {
+                                imgUrl = img;
+                                fullUrl = img;
+                            } else if (typeof img === 'object') {
+                                imgUrl = img.url || img.thumbnail || img.thumb_url || '';
+                                fullUrl = img.full_url || img.url || img.thumbnail || img.thumb_url || '';
+                            }
+                            
+                            // Only add image if we have a valid HTTP/HTTPS URL
+                            if (imgUrl && imgUrl.trim() !== '' && (imgUrl.startsWith('http://') || imgUrl.startsWith('https://'))) {
+                                validReferenceImages.push({
+                                    url: imgUrl,
+                                    fullUrl: fullUrl || imgUrl
+                                });
+                            }
+                        });
+                    }
+                    
+                    // Build image gallery layout: left reference images, center main image, right reference images
+                    var imageGalleryHTML = '';
+                    if (primaryImageUrl || validReferenceImages.length > 0) {
+                        // Split reference images into left and right
+                        var leftImages = [];
+                        var rightImages = [];
+                        validReferenceImages.forEach(function(img, index) {
+                            if (index % 2 === 0) {
+                                leftImages.push(img);
+                            } else {
+                                rightImages.push(img);
+                            }
+                        });
+                        
+                        // Build left column (reference images)
+                        var leftColumnHTML = '<div style="display: flex; flex-direction: column; gap: 12px; align-items: center; justify-content: center; min-width: 120px;">';
+                        if (leftImages.length > 0) {
+                            leftImages.forEach(function(img, index) {
+                                var imgId = 'n88-ref-left-' + itemId + '-' + index;
+                                leftColumnHTML += '<div style="position: relative; width: 100px; height: 100px;">' +
+                                    '<img id="' + imgId + '" ' +
+                                    'src="' + img.url.replace(/"/g, '&quot;') + '" ' +
+                                    'data-full-url="' + img.fullUrl.replace(/"/g, '&quot;') + '" ' +
+                                    'onerror="this.onerror=null; this.src=\'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'%3E%3Crect fill=\'%23000\' width=\'100\' height=\'100\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%23fff\' font-size=\'12\'%3Ereference photo%3C/text%3E%3C/svg%3E\';" ' +
+                                    'style="width: 100px; height: 100px; object-fit: cover; border-radius: 4px; border: 2px solid #ddd; cursor: pointer; transition: all 0.2s; background-color: #000;" ' +
+                                    'onmouseover="this.style.borderColor=\'#0073aa\'; this.style.transform=\'scale(1.05)\'; this.style.boxShadow=\'0 2px 8px rgba(0,115,170,0.3)\';" ' +
+                                    'onmouseout="this.style.borderColor=\'#ddd\'; this.style.transform=\'scale(1)\'; this.style.boxShadow=\'none\';" ' +
+                                    'onclick="(function(elem){var url=elem.getAttribute(\'data-full-url\');if(url&&url.trim()){try{window.open(url,\'_blank\',\'noopener,noreferrer\');}catch(err){console.error(\'Error opening image:\',err);}}else{console.error(\'No URL found for image\');}})(this);" ' +
+                                    'title="Click to view full size" ' +
+                                    'alt="Reference photo" />' +
+                                    '</div>';
+                            });
+                        } else {
+                            // Placeholder if no left images
+                            // leftColumnHTML += '<div style="width: 100px; height: 100px; background-color: #000; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; text-align: center; padding: 4px;">reference photo</div>';
+                        }
+                        leftColumnHTML += '</div>';
+                        
+                        // Build center column (main image) - sized appropriately
+                        var centerColumnHTML = '<div style="flex: 1; display: flex; align-items: center; justify-content: center; min-height: 300px; padding: 0 20px; max-width: 500px;">';
+                        if (primaryImageUrl) {
+                            centerColumnHTML += '<img src="' + primaryImageUrl.replace(/"/g, '&quot;') + '" ' +
+                                'onerror="this.onerror=null; this.src=\'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'400\' height=\'300\'%3E%3Crect fill=\'%23f0f0f0\' width=\'400\' height=\'300\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%23999\' font-size=\'14\'%3EItem Image%3C/text%3E%3C/svg%3E\';" ' +
+                                'style="max-width: 100%; max-height: 350px; width: auto; height: auto; border-radius: 4px; border: 1px solid #e0e0e0; object-fit: contain; box-shadow: 0 2px 8px rgba(0,0,0,0.1);" ' +
+                                'alt="Item main image" />';
+                        } else {
+                            centerColumnHTML += '<div style="width: 100%; height: 300px; background-color: #f0f0f0; border-radius: 4px; border: 1px solid #e0e0e0; display: flex; align-items: center; justify-content: center; color: #999;">No main image available</div>';
+                        }
+                        centerColumnHTML += '</div>';
+                        
+                        // Build right column (reference images)
+                        var rightColumnHTML = '<div style="display: flex; flex-direction: column; gap: 12px; align-items: center; justify-content: center; min-width: 120px;">';
+                        if (rightImages.length > 0) {
+                            rightImages.forEach(function(img, index) {
+                                var imgId = 'n88-ref-right-' + itemId + '-' + index;
+                                rightColumnHTML += '<div style="position: relative; width: 100px; height: 100px;">' +
+                                    '<img id="' + imgId + '" ' +
+                                    'src="' + img.url.replace(/"/g, '&quot;') + '" ' +
+                                    'data-full-url="' + img.fullUrl.replace(/"/g, '&quot;') + '" ' +
+                                    'onerror="this.onerror=null; this.src=\'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'%3E%3Crect fill=\'%23000\' width=\'100\' height=\'100\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%23fff\' font-size=\'12\'%3Ereference photo%3C/text%3E%3C/svg%3E\';" ' +
+                                    'style="width: 100px; height: 100px; object-fit: cover; border-radius: 4px; border: 2px solid #ddd; cursor: pointer; transition: all 0.2s; background-color: #000;" ' +
+                                    'onmouseover="this.style.borderColor=\'#0073aa\'; this.style.transform=\'scale(1.05)\'; this.style.boxShadow=\'0 2px 8px rgba(0,115,170,0.3)\';" ' +
+                                    'onmouseout="this.style.borderColor=\'#ddd\'; this.style.transform=\'scale(1)\'; this.style.boxShadow=\'none\';" ' +
+                                    'onclick="(function(elem){var url=elem.getAttribute(\'data-full-url\');if(url&&url.trim()){try{window.open(url,\'_blank\',\'noopener,noreferrer\');}catch(err){console.error(\'Error opening image:\',err);}}else{console.error(\'No URL found for image\');}})(this);" ' +
+                                    'title="Click to view full size" ' +
+                                    'alt="Reference photo" />' +
+                                    '</div>';
+                            });
+                        } else {
+                            // Placeholder if no right images
+                            // rightColumnHTML += '<div style="width: 100px; height: 100px; background-color: #000; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; text-align: center; padding: 4px;">reference photo</div>';
+                        }
+                        rightColumnHTML += '</div>';
+                        
+                        // Combine into gallery layout
+                        imageGalleryHTML = '<div style="margin-bottom: 24px; display: flex; gap: 16px; align-items: flex-start; justify-content: center; padding: 16px; background-color: #fafafa; border-radius: 4px; border: 1px solid #e0e0e0;">' +
+                            leftColumnHTML +
+                            centerColumnHTML +
+                            rightColumnHTML +
+                            '</div>';
+                    }
+                    
+                    // Build bid form modal HTML
+                    var modalHTML = '<div style="padding: 20px; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center; background-color: #fff;">' +
+                        '<h2 style="margin: 0; font-size: 20px; font-weight: 600; color: #333;">Submit Bid - Item #' + itemId + '</h2>' +
+                        '<button onclick="closeBidFormModal()" style="background: none; border: none; font-size: 28px; cursor: pointer; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; color: #666; line-height: 1;">×</button>' +
+                        '</div>' +
+                        '<div style="flex: 1; overflow-y: auto; padding: 0; background-color: #fff;">' +
+                        '<form id="n88-bid-form" style="padding: 20px;" onsubmit="return validateAndSubmitBid(event);">' +
+                        
+                        // Image gallery: left reference images, center main image, right reference images
+                        imageGalleryHTML +
+                        
                     
                     // 1. Video links (min 1, max 3)
                     '<div style="margin-bottom: 24px;">' +
                     '<label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 8px; color: #333;">Video Links <span style="color: #d32f2f;">*</span></label>' +
-                    '<div style="font-size: 11px; color: #888; margin-bottom: 4px; font-style: italic;">Add video of similar item so designer can see your capability</div>' +
+                    '<div style="font-size: 11px; color: #888; margin-bottom: 4px; font-style: italic;">Add video of similar item so creator can see your capability</div>' +
                     '<div style="font-size: 12px; color: #666; margin-bottom: 8px;">Paste up to 3 links (YouTube, Vimeo, or Loom). At least 1 is required.</div>' +
                     '<div id="n88-video-links-container">' +
                     '<div style="margin-bottom: 8px; display: flex; gap: 8px;">' +
@@ -1531,30 +1746,14 @@ class N88_RFQ_Auth {
                     '<div id="n88-prototype-cost-error" style="margin-top: 6px; font-size: 12px; color: #d32f2f; display: none;"></div>' +
                     '</div>' +
                     
-                    // 5. CAD / shop drawings
-                    '<div style="margin-bottom: 24px;">' +
-                    '<label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 8px; color: #333;">CAD / shop drawings for prototype review? <span style="color: #d32f2f;">*</span></label>' +
-                    '<div style="display: flex; gap: 16px;">' +
-                    '<label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">' +
-                    '<input type="radio" name="cad_yes" value="1" required style="width: 18px; height: 18px; cursor: pointer;" onchange="validateBidForm();" />' +
-                    '<span style="font-size: 14px;">Yes</span>' +
-                    '</label>' +
-                    '<label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">' +
-                    '<input type="radio" name="cad_yes" value="0" style="width: 18px; height: 18px; cursor: pointer;" onchange="validateBidForm();" />' +
-                    '<span style="font-size: 14px;">No</span>' +
-                    '</label>' +
-                    '</div>' +
-                    '<div id="n88-cad-error" style="margin-top: 6px; font-size: 12px; color: #d32f2f; display: none;"></div>' +
-                    '</div>' +
-                    
-                    // 6. Production lead time
+                    // 5. Production lead time
                     '<div style="margin-bottom: 24px;">' +
                     '<label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 8px; color: #333;">Production Lead Time <span style="color: #d32f2f;">*</span></label>' +
                     '<input type="text" name="production_lead_time_text" required placeholder="e.g., 4-6 weeks" style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" oninput="validateBidForm();" />' +
                     '<div id="n88-lead-time-error" style="margin-top: 6px; font-size: 12px; color: #d32f2f; display: none;"></div>' +
                     '</div>' +
                     
-                    // 7. Unit price
+                    // 6. Unit price
                     '<div style="margin-bottom: 24px;">' +
                     '<label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 8px; color: #333;">Unit Price ($) <span style="color: #d32f2f;">*</span></label>' +
                     '<input type="number" name="unit_price" step="0.01" min="0.01" required placeholder="0.00" style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" oninput="validateBidForm();" />' +
@@ -1569,28 +1768,34 @@ class N88_RFQ_Auth {
                     '<button type="button" id="n88-validate-bid-btn" onclick="validateAndSubmitBid(event)" disabled style="padding: 10px 20px; background-color: #ccc; color: #666; border: none; border-radius: 4px; font-size: 14px; font-weight: 600; cursor: not-allowed;">Validate Bid</button>' +
                     '<button type="button" id="n88-submit-bid-btn" onclick="submitBid(event)" disabled style="display: none; padding: 10px 20px; background-color: #0073aa; color: #fff; border: none; border-radius: 4px; font-size: 14px; font-weight: 600; cursor: pointer;">Submit Bid</button>' +
                     '</div>';
-                
-                modalContent.innerHTML = modalHTML;
-                modal.style.display = 'block';
-                document.body.style.overflow = 'hidden';
-                
-                // Initial validation - use setTimeout to ensure DOM is ready
-                setTimeout(function() {
-                    validateBidForm();
-                }, 100);
-                
-                // Reset button states (Commit 2.3.5)
-                setTimeout(function() {
-                    var validateBtn = document.getElementById('n88-validate-bid-btn');
-                    var submitBtn = document.getElementById('n88-submit-bid-btn');
-                    if (validateBtn) {
-                        validateBtn.style.display = 'inline-block';
-                    }
-                    if (submitBtn) {
-                        submitBtn.style.display = 'none';
-                        submitBtn.disabled = true;
-                    }
-                }, 150);
+                    
+                    modalContent.innerHTML = modalHTML;
+                    
+                    // Initial validation - use setTimeout to ensure DOM is ready
+                    setTimeout(function() {
+                        validateBidForm();
+                    }, 100);
+                    
+                    // Reset button states (Commit 2.3.5)
+                    setTimeout(function() {
+                        var validateBtn = document.getElementById('n88-validate-bid-btn');
+                        var submitBtn = document.getElementById('n88-submit-bid-btn');
+                        if (validateBtn) {
+                            validateBtn.style.display = 'inline-block';
+                        }
+                        if (submitBtn) {
+                            submitBtn.style.display = 'none';
+                            submitBtn.disabled = true;
+                        }
+                    }, 150);
+                })
+                .catch(function(error) {
+                    console.error('Error loading item details:', error);
+                    modalContent.innerHTML = '<div style="padding: 40px; text-align: center; color: #d32f2f;">' + 
+                        '<p style="margin-bottom: 20px;">Network error. Failed to load item details.</p>' +
+                        '<button onclick="closeBidFormModal()" style="padding: 8px 16px; background-color: #0073aa; color: #fff; border: none; border-radius: 4px; cursor: pointer;">Close</button>' +
+                        '</div>';
+                });
             }
             
             // Close bid form modal
@@ -1768,19 +1973,13 @@ class N88_RFQ_Auth {
                     isValid = false;
                 }
                 
-                // 5. CAD required
-                var cadYes = form.querySelector('input[name="cad_yes"]:checked');
-                if (!cadYes) {
-                    isValid = false;
-                }
-                
-                // 6. Production lead time: non-empty
+                // 5. Production lead time: non-empty
                 var leadTime = form.querySelector('input[name="production_lead_time_text"]');
                 if (!leadTime || !leadTime.value || !leadTime.value.trim()) {
                     isValid = false;
                 }
                 
-                // 7. Unit price: numeric > 0
+                // 6. Unit price: numeric > 0
                 var unitPrice = form.querySelector('input[name="unit_price"]');
                 if (unitPrice && unitPrice.value) {
                     var priceValue = parseFloat(unitPrice.value);
@@ -1813,7 +2012,6 @@ class N88_RFQ_Auth {
                         prototypeYes: prototypeYes ? prototypeYes.checked : false,
                         timeline: timeline ? timeline.value : '',
                         prototypeCost: prototypeCost ? prototypeCost.value : '',
-                        cadYes: cadYes ? cadYes.value : '',
                         leadTime: leadTime ? leadTime.value : '',
                         unitPrice: unitPrice ? unitPrice.value : '',
                         isValid: isValid
@@ -1866,7 +2064,6 @@ class N88_RFQ_Auth {
                 formData.append('prototype_video_yes', form.querySelector('input[name="prototype_video_yes"]:checked') ? form.querySelector('input[name="prototype_video_yes"]:checked').value : '');
                 formData.append('prototype_timeline_option', form.querySelector('select[name="prototype_timeline_option"]').value);
                 formData.append('prototype_cost', form.querySelector('input[name="prototype_cost"]').value);
-                formData.append('cad_yes', form.querySelector('input[name="cad_yes"]:checked') ? form.querySelector('input[name="cad_yes"]:checked').value : '');
                 formData.append('production_lead_time_text', form.querySelector('input[name="production_lead_time_text"]').value);
                 formData.append('unit_price', form.querySelector('input[name="unit_price"]').value);
                 formData.append('_ajax_nonce', '<?php echo wp_create_nonce( 'n88_validate_supplier_bid' ); ?>');
@@ -1895,7 +2092,7 @@ class N88_RFQ_Auth {
                     if (!data.success) {
                         // Show validation errors
                         if (data.data && data.data.errors) {
-                            var errorHtml = '<div style="padding: 12px; background-color: #fee; border: 1px solid #fcc; border-radius: 4px; margin-bottom: 20px;">' +
+                            var errorHtml = '<div class="n88-validation-errors" style="padding: 12px; background-color: #fee; border: 1px solid #fcc; border-radius: 4px; margin-bottom: 20px;">' +
                                 '<strong style="color: #d32f2f;">Validation Errors:</strong><ul style="margin: 8px 0 0 20px; padding: 0;">';
                             for (var field in data.data.errors) {
                                 errorHtml += '<li style="color: #d32f2f; margin: 4px 0;">' + data.data.errors[field] + '</li>';
@@ -1903,15 +2100,16 @@ class N88_RFQ_Auth {
                             errorHtml += '</ul></div>';
                             
                             var form = document.getElementById('n88-bid-form');
-                            var existingError = form.querySelector('.n88-validation-errors');
-                            if (existingError) {
-                                existingError.remove();
+                            if (form) {
+                                var existingError = form.querySelector('.n88-validation-errors');
+                                if (existingError) {
+                                    existingError.remove();
+                                }
+                                form.insertAdjacentHTML('afterbegin', errorHtml);
+                                
+                                // Scroll to top
+                                form.scrollIntoView({ behavior: 'smooth', block: 'start' });
                             }
-                            form.insertAdjacentHTML('afterbegin', errorHtml);
-                            form.querySelector('.n88-validation-errors').classList.add('n88-validation-errors');
-                            
-                            // Scroll to top
-                            form.scrollIntoView({ behavior: 'smooth', block: 'start' });
                         } else {
                             alert(data.data && data.data.message ? data.data.message : 'Validation failed. Please check your inputs.');
                         }
@@ -1928,18 +2126,19 @@ class N88_RFQ_Auth {
                         
                         // Show success message
                         var form = document.getElementById('n88-bid-form');
-                        var existingError = form.querySelector('.n88-validation-errors');
-                        if (existingError) {
-                            existingError.remove();
+                        if (form) {
+                            var existingError = form.querySelector('.n88-validation-errors');
+                            if (existingError) {
+                                existingError.remove();
+                            }
+                            var successHtml = '<div class="n88-validation-errors" style="padding: 12px; background-color: #e8f5e9; border: 1px solid #4caf50; border-radius: 4px; margin-bottom: 20px; color: #2e7d32;">' +
+                                '<strong>✓ Validation successful!</strong> Click "Submit Bid" to save your bid.' +
+                                '</div>';
+                            form.insertAdjacentHTML('afterbegin', successHtml);
+                            
+                            // Scroll to top
+                            form.scrollIntoView({ behavior: 'smooth', block: 'start' });
                         }
-                        var successHtml = '<div style="padding: 12px; background-color: #e8f5e9; border: 1px solid #4caf50; border-radius: 4px; margin-bottom: 20px; color: #2e7d32;">' +
-                            '<strong>✓ Validation successful!</strong> Click "Submit Bid" to save your bid.' +
-                            '</div>';
-                        form.insertAdjacentHTML('afterbegin', successHtml);
-                        form.querySelector('.n88-validation-errors').classList.add('n88-validation-errors');
-                        
-                        // Scroll to top
-                        form.scrollIntoView({ behavior: 'smooth', block: 'start' });
                     }
                 })
                 .catch(function(error) {
@@ -1989,7 +2188,6 @@ class N88_RFQ_Auth {
                 formData.append('prototype_video_yes', form.querySelector('input[name="prototype_video_yes"]:checked') ? form.querySelector('input[name="prototype_video_yes"]:checked').value : '');
                 formData.append('prototype_timeline_option', form.querySelector('select[name="prototype_timeline_option"]').value);
                 formData.append('prototype_cost', form.querySelector('input[name="prototype_cost"]').value);
-                formData.append('cad_yes', form.querySelector('input[name="cad_yes"]:checked') ? form.querySelector('input[name="cad_yes"]:checked').value : '');
                 formData.append('production_lead_time_text', form.querySelector('input[name="production_lead_time_text"]').value);
                 formData.append('unit_price', form.querySelector('input[name="unit_price"]').value);
                 formData.append('_ajax_nonce', '<?php echo wp_create_nonce( 'n88_submit_supplier_bid' ); ?>');
@@ -2026,14 +2224,17 @@ class N88_RFQ_Auth {
                             errorHtml += '</ul></div>';
                             
                             var form = document.getElementById('n88-bid-form');
-                            var existingError = form.querySelector('.n88-validation-errors');
-                            if (existingError) {
-                                existingError.remove();
+                            if (form) {
+                                var existingError = form.querySelector('.n88-validation-errors');
+                                if (existingError) {
+                                    existingError.remove();
+                                }
+                                // Add class directly to HTML string
+                                errorHtml = errorHtml.replace('<div style="', '<div class="n88-validation-errors" style="');
+                                form.insertAdjacentHTML('afterbegin', errorHtml);
+                                
+                                form.scrollIntoView({ behavior: 'smooth', block: 'start' });
                             }
-                            form.insertAdjacentHTML('afterbegin', errorHtml);
-                            form.querySelector('.n88-validation-errors').classList.add('n88-validation-errors');
-                            
-                            form.scrollIntoView({ behavior: 'smooth', block: 'start' });
                         } else {
                             alert(data.data && data.data.message ? data.data.message : 'Failed to submit bid. Please try again.');
                         }
@@ -2096,12 +2297,45 @@ class N88_RFQ_Auth {
             // Expose to global scope
             window.openBidModal = openBidModal;
             window.closeBidModal = closeBidModal;
+            // Withdraw bid function (Commit 2.3.5)
+            function withdrawBid(itemId) {
+                if (!confirm('Are you sure you want to withdraw your bid? You will be able to resubmit a new bid after withdrawal.')) {
+                    return;
+                }
+                
+                var formData = new FormData();
+                formData.append('action', 'n88_withdraw_supplier_bid');
+                formData.append('item_id', itemId);
+                formData.append('_ajax_nonce', '<?php echo wp_create_nonce( 'n88_withdraw_supplier_bid' ); ?>');
+                
+                var ajaxUrl = typeof ajaxurl !== 'undefined' ? ajaxurl : '<?php echo esc_url( admin_url( 'admin-ajax.php' ) ); ?>';
+                fetch(ajaxUrl, {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
+                    if (data.success) {
+                        alert(data.data.message || 'Bid withdrawn successfully.');
+                        // Refresh the item detail modal to show "Start Bid" button
+                        openBidModal(itemId);
+                    } else {
+                        alert(data.data.message || 'Failed to withdraw bid. Please try again.');
+                    }
+                })
+                .catch(function(error) {
+                    console.error('Error withdrawing bid:', error);
+                    alert('An error occurred while withdrawing the bid. Please try again.');
+                });
+            }
+            
             window.openBidFormModal = openBidFormModal;
             window.closeBidFormModal = closeBidFormModal;
             window.addVideoLink = addVideoLink;
             window.removeVideoLink = removeVideoLink;
             window.validateVideoLink = validateVideoLink;
             window.validateBidForm = validateBidForm;
+            window.withdrawBid = withdrawBid;
             window.validateAndSubmitBid = validateAndSubmitBid;
         })();
         </script>
@@ -2147,7 +2381,7 @@ class N88_RFQ_Auth {
         <div class="n88-admin-queue" style="max-width: 1400px; margin: 0 auto; padding: 40px 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;">
             <!-- Header -->
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; padding-bottom: 15px; border-bottom: 2px solid #e0e0e0;">
-                <h1 style="margin: 0; font-size: 24px; font-weight: 600; color: #333;">NorthEightyEight — Admin Assembly Line</h1>
+                <h1 style="margin: 0; font-size: 24px; font-weight: 600; color: #333;"> Super Admin Assembly Line</h1>
                 <div style="font-size: 14px; color: #666;">
                     Logged in: <?php echo esc_html( $current_user->display_name ); ?>
                 </div>
@@ -2177,7 +2411,7 @@ class N88_RFQ_Auth {
                         </select>
                     </div>
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <label style="font-size: 14px; color: #666;">Supplier</label>
+                        <label style="font-size: 14px; color: #666;">Maker</label>
                         <select id="n88-admin-supplier" style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; background-color: #fff; cursor: pointer; min-width: 120px;">
                             <option value="all" <?php selected( $supplier_id, 'all' ); ?>>All</option>
                             <option value="supplier_x" <?php selected( $supplier_id, 'supplier_x' ); ?>>Supplier X</option>
@@ -2186,7 +2420,7 @@ class N88_RFQ_Auth {
                         </select>
                     </div>
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <label style="font-size: 14px; color: #666;">Designer</label>
+                        <label style="font-size: 14px; color: #666;">Creator</label>
                         <select id="n88-admin-designer" style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; background-color: #fff; cursor: pointer; min-width: 120px;">
                             <option value="all" <?php selected( $designer_id, 'all' ); ?>>All</option>
                             <option value="sarah" <?php selected( $designer_id, 'sarah' ); ?>>Sarah (Firm A)</option>
@@ -2209,8 +2443,8 @@ class N88_RFQ_Auth {
                             <th style="padding: 15px; text-align: left; font-size: 14px; font-weight: 600; color: #333; border-right: 1px solid #e0e0e0;">Item</th>
                             <th style="padding: 15px; text-align: left; font-size: 14px; font-weight: 600; color: #333; border-right: 1px solid #e0e0e0;">Item Title</th>
                             <th style="padding: 15px; text-align: left; font-size: 14px; font-weight: 600; color: #333; border-right: 1px solid #e0e0e0;">Request Type</th>
-                            <th style="padding: 15px; text-align: left; font-size: 14px; font-weight: 600; color: #333; border-right: 1px solid #e0e0e0;">Designer</th>
-                            <th style="padding: 15px; text-align: left; font-size: 14px; font-weight: 600; color: #333; border-right: 1px solid #e0e0e0;">Supplier</th>
+                            <th style="padding: 15px; text-align: left; font-size: 14px; font-weight: 600; color: #333; border-right: 1px solid #e0e0e0;">Creator</th>
+                            <th style="padding: 15px; text-align: left; font-size: 14px; font-weight: 600; color: #333; border-right: 1px solid #e0e0e0;">Maker</th>
                             <th style="padding: 15px; text-align: left; font-size: 14px; font-weight: 600; color: #333;">Action</th>
                         </tr>
                     </thead>
@@ -2715,7 +2949,7 @@ class N88_RFQ_Auth {
         $is_supplier = in_array( 'n88_supplier_admin', $current_user->roles, true );
         
         if ( ! $is_supplier ) {
-            wp_die( 'Access denied. Supplier Admin account required.', 'Access Denied', array( 'response' => 403 ) );
+            wp_die( 'Access denied. Maker account required.', 'Access Denied', array( 'response' => 403 ) );
         }
 
         global $wpdb;
@@ -3225,7 +3459,7 @@ class N88_RFQ_Auth {
     public function render_designer_onboarding( $atts = array() ) {
         // Allow admins to edit pages even if they don't have designer role
         if ( is_admin() && current_user_can( 'edit_pages' ) ) {
-            return '<p><em>Designer Onboarding page - This shortcode will display the designer onboarding form.</em></p>';
+            return '<p><em>Creator Onboarding page - This shortcode will display the creator onboarding form.</em></p>';
         }
 
         // Check if user is logged in and is a designer
@@ -3238,7 +3472,7 @@ class N88_RFQ_Auth {
         $is_designer = in_array( 'n88_designer', $current_user->roles, true ) || in_array( 'designer', $current_user->roles, true );
         
         if ( ! $is_designer ) {
-            wp_die( 'Access denied. Designer account required.', 'Access Denied', array( 'response' => 403 ) );
+            wp_die( 'Access denied. Creator account required.', 'Access Denied', array( 'response' => 403 ) );
         }
 
         global $wpdb;
@@ -3441,7 +3675,7 @@ class N88_RFQ_Auth {
         $is_designer = in_array( 'n88_designer', $current_user->roles, true ) || in_array( 'designer', $current_user->roles, true );
         
         if ( ! $is_designer ) {
-            wp_send_json_error( array( 'message' => 'Access denied. Designer account required.' ) );
+            wp_send_json_error( array( 'message' => 'Access denied. Creator account required.' ) );
         }
 
         $user_id = $current_user->ID;
@@ -3579,10 +3813,11 @@ class N88_RFQ_Auth {
 
         $current_user = wp_get_current_user();
         $is_supplier = in_array( 'n88_supplier_admin', $current_user->roles, true );
+        $is_designer = in_array( 'n88_designer', $current_user->roles, true ) || in_array( 'designer', $current_user->roles, true );
         $is_system_operator = in_array( 'n88_system_operator', $current_user->roles, true );
         
-        if ( ! $is_supplier && ! $is_system_operator ) {
-            wp_send_json_error( array( 'message' => 'Access denied. Supplier account required.' ) );
+        if ( ! $is_supplier && ! $is_designer && ! $is_system_operator ) {
+            wp_send_json_error( array( 'message' => 'Access denied. Maker, Creator, or Super Admin account required.' ) );
         }
 
         $item_id = isset( $_POST['item_id'] ) ? intval( $_POST['item_id'] ) : 0;
@@ -3626,24 +3861,49 @@ class N88_RFQ_Auth {
         $item_delivery_context_table = $wpdb->prefix . 'n88_item_delivery_context';
         $categories_table = $wpdb->prefix . 'n88_categories';
 
-        // CRITICAL: Permission check - supplier can only view items they have a route for
-        // System operators can view any item
+        // CRITICAL: Permission check
+        // - System operators can view any item
+        // - Designers can view their own items
+        // - Suppliers can only view items they have a route for
         if ( ! $is_system_operator ) {
-            $route_exists = $wpdb->get_var( $wpdb->prepare(
-                "SELECT COUNT(*) FROM {$rfq_routes_table} 
-                WHERE item_id = %d 
-                AND supplier_id = %d 
-                AND status IN ('queued', 'sent', 'viewed', 'bid_submitted')",
-                $item_id,
-                $current_user->ID
-            ) );
+            if ( $is_designer ) {
+                // Designer can view their own items - check ownership
+                $item_owner = $wpdb->get_var( $wpdb->prepare(
+                    "SELECT owner_user_id FROM {$items_table} WHERE id = %d",
+                    $item_id
+                ) );
+                
+                if ( ! $item_owner || intval( $item_owner ) !== $current_user->ID ) {
+                    wp_send_json_error( array( 'message' => 'Access denied. You can only view your own items.' ), 403 );
+                }
+            } else if ( $is_supplier ) {
+                // Supplier can only view items they have a route for
+                $route_exists = $wpdb->get_var( $wpdb->prepare(
+                    "SELECT COUNT(*) FROM {$rfq_routes_table} 
+                    WHERE item_id = %d 
+                    AND supplier_id = %d 
+                    AND status IN ('queued', 'sent', 'viewed', 'bid_submitted')",
+                    $item_id,
+                    $current_user->ID
+                ) );
 
-            if ( ! $route_exists || intval( $route_exists ) === 0 ) {
-                wp_send_json_error( array( 'message' => 'Access denied. You do not have permission to view this item.' ), 403 );
+                if ( ! $route_exists || intval( $route_exists ) === 0 ) {
+                    wp_send_json_error( array( 'message' => 'Access denied. You do not have permission to view this item.' ), 403 );
+                }
             }
         }
 
         // Fetch item data
+        // Check if meta_json column exists
+        $items_columns = $wpdb->get_col( "DESCRIBE {$items_table}" );
+        $has_meta_json = in_array( 'meta_json', $items_columns, true );
+        
+        // Build SELECT query - include owner_user_id and meta_json if column exists
+        $select_fields = "id, title, description, item_type, primary_image_id, deleted_at, owner_user_id";
+        if ( $has_meta_json ) {
+            $select_fields .= ", meta_json";
+        }
+        
         // First check if item exists (even if deleted)
         $item_exists = $wpdb->get_var( $wpdb->prepare(
             "SELECT COUNT(*) FROM {$items_table} WHERE id = %d",
@@ -3656,7 +3916,7 @@ class N88_RFQ_Auth {
         
         // Now fetch the item (must not be deleted)
         $item = $wpdb->get_row( $wpdb->prepare(
-            "SELECT id, title, description, item_type, primary_image_id, meta_json, quantity, deleted_at
+            "SELECT {$select_fields}
              FROM {$items_table}
              WHERE id = %d",
             $item_id
@@ -3670,6 +3930,11 @@ class N88_RFQ_Auth {
         if ( ! empty( $item['deleted_at'] ) ) {
             wp_send_json_error( array( 'message' => 'Item has been deleted. deleted_at: ' . esc_html( $item['deleted_at'] ) ) );
         }
+        
+        // Initialize meta_json if column doesn't exist
+        if ( ! $has_meta_json ) {
+            $item['meta_json'] = null;
+        }
 
         // Parse meta_json for dimensions, sourcing_type, timeline_type, etc.
         $meta = array();
@@ -3678,14 +3943,27 @@ class N88_RFQ_Auth {
             if ( is_array( $decoded_meta ) ) {
                 $meta = $decoded_meta;
             }
+            // Debug: Log meta_json parsing
+            error_log( 'Supplier Detail View - Parsed meta_json for item ' . $item_id . ': ' . wp_json_encode( $meta ) );
+        } else {
+            error_log( 'Supplier Detail View - meta_json is empty for item ' . $item_id );
         }
 
-        // Get item image
+        // Get item image - ensure absolute URL
         $image_url = '';
+        $primary_image_url = '';
         if ( ! empty( $item['primary_image_id'] ) ) {
             $image_url = wp_get_attachment_image_url( $item['primary_image_id'], 'full' );
             if ( ! $image_url ) {
                 $image_url = wp_get_attachment_url( $item['primary_image_id'] );
+            }
+            // Ensure absolute URL (wp_get_attachment_image_url should already return absolute, but double-check)
+            if ( $image_url ) {
+                // If relative URL, convert to absolute
+                if ( ! preg_match( '/^https?:\/\//', $image_url ) ) {
+                    $image_url = home_url( $image_url );
+                }
+                $primary_image_url = $image_url;
             }
         }
 
@@ -3704,9 +3982,21 @@ class N88_RFQ_Auth {
             }
         }
 
-        // Get delivery context
+        // Get delivery context (including quantity and dimensions from RFQ submission)
+        $delivery_columns = $wpdb->get_col( "DESCRIBE {$item_delivery_context_table}" );
+        $has_quantity = in_array( 'quantity', $delivery_columns, true );
+        $has_dimensions = in_array( 'dimensions_json', $delivery_columns, true );
+        
+        $select_fields = "delivery_country_code, delivery_postal_code, shipping_estimate_mode";
+        if ( $has_quantity ) {
+            $select_fields .= ", quantity";
+        }
+        if ( $has_dimensions ) {
+            $select_fields .= ", dimensions_json";
+        }
+        
         $delivery_context = $wpdb->get_row( $wpdb->prepare(
-            "SELECT delivery_country_code, delivery_postal_code, shipping_estimate_mode
+            "SELECT {$select_fields}
              FROM {$item_delivery_context_table}
              WHERE item_id = %d",
             $item_id
@@ -3743,24 +4033,208 @@ class N88_RFQ_Auth {
             }
         }
 
-        // Get reference images (from item attachments or meta)
+        // Get reference images (from item attachments or meta) - ensure absolute URLs
         $reference_images = array();
-        if ( isset( $meta['inspiration'] ) && is_array( $meta['inspiration'] ) ) {
+        $inspiration_images = array();
+        
+        // Debug: Check if inspiration exists in meta
+        if ( ! isset( $meta['inspiration'] ) ) {
+            error_log( 'Supplier Detail View - No inspiration key in meta for item ' . $item_id );
+        } elseif ( ! is_array( $meta['inspiration'] ) ) {
+            error_log( 'Supplier Detail View - Inspiration is not an array for item ' . $item_id . ', type: ' . gettype( $meta['inspiration'] ) );
+        } elseif ( empty( $meta['inspiration'] ) ) {
+            error_log( 'Supplier Detail View - Inspiration array is empty for item ' . $item_id );
+        }
+        
+        if ( isset( $meta['inspiration'] ) && is_array( $meta['inspiration'] ) && ! empty( $meta['inspiration'] ) ) {
+            // Debug: Log raw inspiration data
+            error_log( 'Supplier Detail View - Processing ' . count( $meta['inspiration'] ) . ' inspiration items for item ' . $item_id );
+            error_log( 'Supplier Detail View - Raw inspiration data for item ' . $item_id . ': ' . wp_json_encode( $meta['inspiration'] ) );
             foreach ( $meta['inspiration'] as $insp_item ) {
+                $thumb_url = '';
+                $full_url = '';
+                $img_id = null;
+                
+                // Priority 1: Use attachment ID if available (most reliable)
                 if ( isset( $insp_item['id'] ) && ! empty( $insp_item['id'] ) ) {
-                    $thumb_url = wp_get_attachment_image_url( $insp_item['id'], 'thumbnail' );
-                    if ( $thumb_url ) {
-                        $reference_images[] = array(
-                            'id' => $insp_item['id'],
-                            'url' => $thumb_url,
-                            'full_url' => wp_get_attachment_image_url( $insp_item['id'], 'full' )
-                        );
+                    $img_id = intval( $insp_item['id'] );
+                    
+                    // Verify attachment exists in database
+                    $attachment_exists = get_post( $img_id );
+                    if ( $attachment_exists && $attachment_exists->post_type === 'attachment' ) {
+                        // Try medium size first (better for thumbnails), fallback to thumbnail, then full
+                        $thumb_url = wp_get_attachment_image_url( $img_id, 'medium' );
+                        if ( ! $thumb_url ) {
+                            $thumb_url = wp_get_attachment_image_url( $img_id, 'thumbnail' );
+                        }
+                        if ( ! $thumb_url ) {
+                            $thumb_url = wp_get_attachment_url( $img_id );
+                        }
+                        
+                        $full_url = wp_get_attachment_image_url( $img_id, 'full' );
+                        if ( ! $full_url ) {
+                            $full_url = wp_get_attachment_url( $img_id );
+                        }
+                        
+                        // Ensure absolute URLs
+                        if ( $thumb_url && ! preg_match( '/^https?:\/\//', $thumb_url ) ) {
+                            $thumb_url = home_url( $thumb_url );
+                        }
+                        if ( $full_url && ! preg_match( '/^https?:\/\//', $full_url ) ) {
+                            $full_url = home_url( $full_url );
+                        }
+                    } else {
+                        // Attachment ID doesn't exist, log and try URL fallback
+                        error_log( 'Supplier Detail View - Attachment ID ' . $img_id . ' does not exist for item ' . $item_id );
+                        $img_id = null; // Reset so we don't include invalid ID
                     }
-                } elseif ( isset( $insp_item['url'] ) ) {
-                    $reference_images[] = array(
-                        'url' => esc_url_raw( $insp_item['url'] ),
-                        'full_url' => esc_url_raw( $insp_item['url'] )
-                    );
+                }
+                
+                // Priority 2: Use URL from inspiration item if ID didn't work or URL is provided
+                if ( empty( $thumb_url ) && isset( $insp_item['url'] ) && ! empty( $insp_item['url'] ) ) {
+                    $img_url = trim( $insp_item['url'] );
+                    
+                    // Check if URL is incomplete (just domain, with or without trailing slash)
+                    // Valid URLs must have a path component (not just domain or domain/)
+                    $is_incomplete_url = false;
+                    if ( preg_match( '/^https?:\/\/[^\/]+$/', $img_url ) ) {
+                        // URL is just domain (no trailing slash)
+                        $is_incomplete_url = true;
+                    } elseif ( preg_match( '/^https?:\/\/[^\/]+\/$/', $img_url ) ) {
+                        // URL is just domain with trailing slash (still incomplete)
+                        $is_incomplete_url = true;
+                    } elseif ( ! preg_match( '/^https?:\/\/.+\/.+/', $img_url ) && ! preg_match( '/^https?:\/\/.+\.[a-z]{2,4}\//i', $img_url ) ) {
+                        // URL doesn't have a proper path component
+                        $is_incomplete_url = true;
+                    }
+                    
+                    if ( $is_incomplete_url ) {
+                        // URL is incomplete, try to find attachment by other means
+                        error_log( 'Supplier Detail View - Incomplete inspiration URL (domain only): ' . $img_url . ' for item ' . $item_id );
+                        
+                        // Try to find attachment by searching in post meta or by filename if we have title
+                        if ( isset( $insp_item['title'] ) && ! empty( $insp_item['title'] ) ) {
+                            global $wpdb;
+                            $filename = sanitize_file_name( $insp_item['title'] );
+                            // Try to find attachment by filename
+                            $found_attachment = $wpdb->get_var( $wpdb->prepare(
+                                "SELECT ID FROM {$wpdb->posts} 
+                                WHERE post_type = 'attachment' 
+                                AND (post_title LIKE %s OR guid LIKE %s)
+                                LIMIT 1",
+                                '%' . $wpdb->esc_like( $filename ) . '%',
+                                '%' . $wpdb->esc_like( $filename ) . '%'
+                            ) );
+                            
+                            if ( $found_attachment ) {
+                                $img_id = intval( $found_attachment );
+                                $thumb_url = wp_get_attachment_image_url( $img_id, 'medium' );
+                                if ( ! $thumb_url ) {
+                                    $thumb_url = wp_get_attachment_image_url( $img_id, 'thumbnail' );
+                                }
+                                if ( ! $thumb_url ) {
+                                    $thumb_url = wp_get_attachment_url( $img_id );
+                                }
+                                $full_url = wp_get_attachment_image_url( $img_id, 'full' );
+                                if ( ! $full_url ) {
+                                    $full_url = wp_get_attachment_url( $img_id );
+                                }
+                                
+                                // Ensure absolute URLs
+                                if ( $thumb_url && ! preg_match( '/^https?:\/\//', $thumb_url ) ) {
+                                    $thumb_url = home_url( $thumb_url );
+                                }
+                                if ( $full_url && ! preg_match( '/^https?:\/\//', $full_url ) ) {
+                                    $full_url = home_url( $full_url );
+                                }
+                                
+                                error_log( 'Supplier Detail View - Found attachment by filename: ' . $img_id . ' for item ' . $item_id );
+                            }
+                        }
+                        
+                        // Also try to find attachment by ID if we have one but URL is incomplete
+                        if ( empty( $thumb_url ) && isset( $insp_item['id'] ) && ! empty( $insp_item['id'] ) ) {
+                            $try_id = intval( $insp_item['id'] );
+                            $try_attachment = get_post( $try_id );
+                            if ( $try_attachment && $try_attachment->post_type === 'attachment' ) {
+                                $thumb_url = wp_get_attachment_image_url( $try_id, 'medium' );
+                                if ( ! $thumb_url ) {
+                                    $thumb_url = wp_get_attachment_image_url( $try_id, 'thumbnail' );
+                                }
+                                if ( ! $thumb_url ) {
+                                    $thumb_url = wp_get_attachment_url( $try_id );
+                                }
+                                $full_url = wp_get_attachment_image_url( $try_id, 'full' );
+                                if ( ! $full_url ) {
+                                    $full_url = wp_get_attachment_url( $try_id );
+                                }
+                                
+                                // Ensure absolute URLs
+                                if ( $thumb_url && ! preg_match( '/^https?:\/\//', $thumb_url ) ) {
+                                    $thumb_url = home_url( $thumb_url );
+                                }
+                                if ( $full_url && ! preg_match( '/^https?:\/\//', $full_url ) ) {
+                                    $full_url = home_url( $full_url );
+                                }
+                                
+                                $img_id = $try_id;
+                                error_log( 'Supplier Detail View - Found attachment by ID (from incomplete URL): ' . $img_id . ' for item ' . $item_id );
+                            }
+                        }
+                        
+                        // If still no valid URL, skip this inspiration item
+                        if ( empty( $thumb_url ) ) {
+                            error_log( 'Supplier Detail View - Skipping inspiration image with incomplete URL (item_id: ' . $item_id . ', url: ' . $img_url . ')' );
+                            continue;
+                        }
+                    } else {
+                        // URL has a proper path, validate and use it
+                        $thumb_url = esc_url_raw( $img_url );
+                        $full_url = esc_url_raw( $img_url );
+                        
+                        // Try to get attachment ID from URL if we don't have one
+                        if ( ! $img_id ) {
+                            $found_id = attachment_url_to_postid( $img_url );
+                            if ( $found_id > 0 ) {
+                                $img_id = $found_id;
+                                // Prefer WordPress-generated URLs if we found the attachment
+                                $better_thumb = wp_get_attachment_image_url( $img_id, 'medium' );
+                                if ( $better_thumb ) {
+                                    $thumb_url = $better_thumb;
+                                }
+                                $better_full = wp_get_attachment_image_url( $img_id, 'full' );
+                                if ( $better_full ) {
+                                    $full_url = $better_full;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Only add if we have a valid URL with a proper path (not just domain or domain/)
+                // Require at least one character after the domain and a slash, then more path
+                if ( ! empty( $thumb_url ) && preg_match( '/^https?:\/\/.+\/.+/', $thumb_url ) ) {
+                    // Ensure absolute URLs
+                    if ( ! preg_match( '/^https?:\/\//', $thumb_url ) ) {
+                        $thumb_url = home_url( $thumb_url );
+                    }
+                    if ( $full_url && ! preg_match( '/^https?:\/\//', $full_url ) ) {
+                        $full_url = home_url( $full_url );
+                    }
+                    
+                    $img_data = array();
+                    if ( $img_id ) {
+                        $img_data['id'] = $img_id;
+                    }
+                    $img_data['url'] = esc_url_raw( $thumb_url );
+                    $img_data['full_url'] = esc_url_raw( $full_url ? $full_url : $thumb_url );
+                    
+                    $reference_images[] = $img_data;
+                    $inspiration_images[] = $img_data;
+                    
+                    error_log( 'Supplier Detail View - Added inspiration image (item_id: ' . $item_id . ', url: ' . $thumb_url . ', id: ' . ( $img_id ? $img_id : 'none' ) . ')' );
+                } else {
+                    error_log( 'Supplier Detail View - Skipping invalid inspiration image (item_id: ' . $item_id . ', url: ' . ( isset( $insp_item['url'] ) ? $insp_item['url'] : 'none' ) . ', id: ' . ( isset( $insp_item['id'] ) ? $insp_item['id'] : 'none' ) . ', resolved_thumb_url: ' . ( $thumb_url ? $thumb_url : 'empty' ) . ')' );
                 }
             }
         }
@@ -3771,12 +4245,58 @@ class N88_RFQ_Auth {
             $media_links = $meta['media_links'];
         }
 
-        // Extract dimensions
+        // Extract dimensions - prioritize RFQ submission dimensions over item meta
         $dims = null;
-        if ( isset( $meta['dims'] ) && is_array( $meta['dims'] ) ) {
+        if ( $delivery_context && $has_dimensions && ! empty( $delivery_context['dimensions_json'] ) ) {
+            // Use dimensions from RFQ submission (stored in delivery context)
+            $decoded_dims = json_decode( $delivery_context['dimensions_json'], true );
+            if ( is_array( $decoded_dims ) ) {
+                // Normalize to w/d/h format for frontend compatibility (frontend expects w, d, h, unit)
+                $dims = array(
+                    'w' => isset( $decoded_dims['width'] ) ? floatval( $decoded_dims['width'] ) : ( isset( $decoded_dims['w'] ) ? floatval( $decoded_dims['w'] ) : null ),
+                    'd' => isset( $decoded_dims['depth'] ) ? floatval( $decoded_dims['depth'] ) : ( isset( $decoded_dims['d'] ) ? floatval( $decoded_dims['d'] ) : null ),
+                    'h' => isset( $decoded_dims['height'] ) ? floatval( $decoded_dims['height'] ) : ( isset( $decoded_dims['h'] ) ? floatval( $decoded_dims['h'] ) : null ),
+                    'unit' => isset( $decoded_dims['unit'] ) ? sanitize_text_field( $decoded_dims['unit'] ) : '',
+                );
+                error_log( 'Supplier Detail View - Using dimensions from delivery context for item ' . $item_id . ': ' . wp_json_encode( $dims ) );
+            } else {
+                error_log( 'Supplier Detail View - Failed to decode dimensions_json for item ' . $item_id . ': ' . $delivery_context['dimensions_json'] );
+            }
+        } elseif ( isset( $meta['dims'] ) && is_array( $meta['dims'] ) ) {
+            // Fallback to item meta
             $dims = $meta['dims'];
+            error_log( 'Supplier Detail View - Using dimensions from item meta (dims) for item ' . $item_id );
         } elseif ( isset( $meta['dims_cm'] ) && is_array( $meta['dims_cm'] ) ) {
+            // Fallback to item meta (cm)
             $dims = $meta['dims_cm'];
+            error_log( 'Supplier Detail View - Using dimensions from item meta (dims_cm) for item ' . $item_id );
+        } else {
+            error_log( 'Supplier Detail View - No dimensions found for item ' . $item_id . ' (has_dimensions: ' . ( $has_dimensions ? 'true' : 'false' ) . ', delivery_context exists: ' . ( $delivery_context ? 'true' : 'false' ) . ')' );
+        }
+
+        // Get quantity - prioritize RFQ submission quantity over item meta
+        $quantity = null;
+        if ( $delivery_context && $has_quantity && ! empty( $delivery_context['quantity'] ) ) {
+            // Use quantity from RFQ submission (stored in delivery context)
+            $quantity = intval( $delivery_context['quantity'] );
+        } elseif ( isset( $meta['quantity'] ) ) {
+            // Fallback to item meta
+            $quantity = intval( $meta['quantity'] );
+        }
+
+        // Get bid status (Commit 2.3.5 - check if bid already submitted)
+        $item_bids_table = $wpdb->prefix . 'n88_item_bids';
+        $bid_status = null;
+        if ( ! $is_system_operator ) {
+            $existing_bid = $wpdb->get_row( $wpdb->prepare(
+                "SELECT status FROM {$item_bids_table} 
+                WHERE item_id = %d AND supplier_id = %d",
+                $item_id,
+                $current_user->ID
+            ) );
+            if ( $existing_bid ) {
+                $bid_status = $existing_bid->status;
+            }
         }
 
         // Build response (read-only, no writes)
@@ -3785,8 +4305,9 @@ class N88_RFQ_Auth {
             'title' => sanitize_text_field( $item['title'] ),
             'description' => sanitize_textarea_field( $item['description'] ),
             'category' => $category_name,
-            'image_url' => $image_url ? esc_url_raw( $image_url ) : '',
-            'quantity' => ! empty( $item['quantity'] ) ? intval( $item['quantity'] ) : null,
+            'image_url' => $image_url ? esc_url_raw( $image_url ) : '', // Keep for backward compatibility
+            'primary_image_url' => $primary_image_url ? esc_url_raw( $primary_image_url ) : '', // Standardized key
+            'quantity' => $quantity,
             'dimensions' => $dims,
             'sourcing_type' => isset( $meta['sourcing_type'] ) ? sanitize_text_field( $meta['sourcing_type'] ) : null,
             'timeline_type' => isset( $meta['timeline_type'] ) ? sanitize_text_field( $meta['timeline_type'] ) : null,
@@ -3794,8 +4315,10 @@ class N88_RFQ_Auth {
             'delivery_postal_code' => $delivery_context && ! empty( $delivery_context['delivery_postal_code'] ) ? sanitize_text_field( $delivery_context['delivery_postal_code'] ) : null,
             'shipping_mode_label' => $shipping_mode_label,
             'route_label' => $route_label,
-            'reference_images' => $reference_images,
+            'reference_images' => $reference_images, // Keep for backward compatibility
+            'inspiration_images' => $inspiration_images, // Standardized key
             'media_links' => $media_links,
+            'bid_status' => $bid_status, // Commit 2.3.5 - bid status to prevent duplicate submissions
         );
 
         wp_send_json_success( $response );
@@ -3817,7 +4340,7 @@ class N88_RFQ_Auth {
         $is_system_operator = in_array( 'n88_system_operator', $current_user->roles, true );
         
         if ( ! $is_supplier && ! $is_system_operator ) {
-            wp_send_json_error( array( 'message' => 'Access denied. Supplier account required.' ) );
+            wp_send_json_error( array( 'message' => 'Access denied. Maker account required.' ) );
         }
 
         $item_id = isset( $_POST['item_id'] ) ? intval( $_POST['item_id'] ) : 0;
@@ -3925,19 +4448,13 @@ class N88_RFQ_Auth {
             }
         }
 
-        // 5. CAD / shop drawings (required)
-        $cad_yes = isset( $_POST['cad_yes'] ) ? sanitize_text_field( wp_unslash( $_POST['cad_yes'] ) ) : '';
-        if ( empty( $cad_yes ) || ! in_array( $cad_yes, array( '0', '1' ), true ) ) {
-            $errors['cad_yes'] = 'Please specify if you will provide CAD/shop drawings.';
-        }
-
-        // 6. Production lead time (non-empty text)
+        // 5. Production lead time (non-empty text)
         $production_lead_time_text = isset( $_POST['production_lead_time_text'] ) ? sanitize_text_field( wp_unslash( $_POST['production_lead_time_text'] ) ) : '';
         if ( empty( trim( $production_lead_time_text ) ) ) {
             $errors['production_lead_time_text'] = 'Production lead time is required.';
         }
 
-        // 7. Unit price (numeric > 0)
+        // 6. Unit price (numeric > 0)
         $unit_price = isset( $_POST['unit_price'] ) ? sanitize_text_field( wp_unslash( $_POST['unit_price'] ) ) : '';
         if ( empty( $unit_price ) ) {
             $errors['unit_price'] = 'Unit price is required.';
@@ -3978,7 +4495,7 @@ class N88_RFQ_Auth {
         $is_system_operator = in_array( 'n88_system_operator', $current_user->roles, true );
         
         if ( ! $is_supplier && ! $is_system_operator ) {
-            wp_send_json_error( array( 'message' => 'Access denied. Supplier account required.' ) );
+            wp_send_json_error( array( 'message' => 'Access denied. Maker account required.' ) );
         }
 
         $item_id = isset( $_POST['item_id'] ) ? intval( $_POST['item_id'] ) : 0;
@@ -4088,19 +4605,13 @@ class N88_RFQ_Auth {
             }
         }
 
-        // 5. CAD / shop drawings (required)
-        $cad_yes = isset( $_POST['cad_yes'] ) ? sanitize_text_field( wp_unslash( $_POST['cad_yes'] ) ) : '';
-        if ( empty( $cad_yes ) || ! in_array( $cad_yes, array( '0', '1' ), true ) ) {
-            $errors['cad_yes'] = 'Please specify if you will provide CAD/shop drawings.';
-        }
-
-        // 6. Production lead time (non-empty text)
+        // 5. Production lead time (non-empty text)
         $production_lead_time_text = isset( $_POST['production_lead_time_text'] ) ? sanitize_text_field( wp_unslash( $_POST['production_lead_time_text'] ) ) : '';
         if ( empty( trim( $production_lead_time_text ) ) ) {
             $errors['production_lead_time_text'] = 'Production lead time is required.';
         }
 
-        // 7. Unit price (numeric > 0)
+        // 6. Unit price (numeric > 0)
         $unit_price = isset( $_POST['unit_price'] ) ? sanitize_text_field( wp_unslash( $_POST['unit_price'] ) ) : '';
         if ( empty( $unit_price ) ) {
             $errors['unit_price'] = 'Unit price is required.';
@@ -4149,7 +4660,7 @@ class N88_RFQ_Auth {
                 'prototype_video_yes' => 1, // Must be 1
                 'prototype_timeline_option' => $prototype_timeline_option,
                 'prototype_cost' => $prototype_cost_float,
-                'cad_yes' => intval( $cad_yes ),
+                'cad_yes' => null, // CAD removed from bid process - set to NULL
                 'status' => 'submitted',
             );
 
@@ -4159,7 +4670,7 @@ class N88_RFQ_Auth {
                     $item_bids_table,
                     $bid_data,
                     array( 'bid_id' => $existing_bid->bid_id ),
-                    array( '%d', '%d', '%d', '%f', '%s', '%d', '%s', '%f', '%d', '%s' ),
+                    array( '%d', '%d', '%d', '%f', '%s', '%d', '%s', '%f', '%s', '%s' ),
                     array( '%d' )
                 );
                 $bid_id = $existing_bid->bid_id;
@@ -4168,7 +4679,7 @@ class N88_RFQ_Auth {
                 $wpdb->insert(
                     $item_bids_table,
                     $bid_data,
-                    array( '%d', '%d', '%d', '%f', '%s', '%d', '%s', '%f', '%d', '%s' )
+                    array( '%d', '%d', '%d', '%f', '%s', '%d', '%s', '%f', '%s', '%s' )
                 );
                 $bid_id = $wpdb->insert_id;
             }
@@ -4258,7 +4769,7 @@ class N88_RFQ_Auth {
         $is_system_operator = in_array( 'n88_system_operator', $current_user->roles, true );
         
         if ( ! $is_supplier && ! $is_system_operator ) {
-            wp_send_json_error( array( 'message' => 'Access denied. Supplier account required.' ) );
+            wp_send_json_error( array( 'message' => 'Access denied. Maker account required.' ) );
         }
 
         $item_id = isset( $_POST['item_id'] ) ? intval( $_POST['item_id'] ) : 0;
@@ -4321,7 +4832,7 @@ class N88_RFQ_Auth {
         $is_system_operator = in_array( 'n88_system_operator', $current_user->roles, true );
 
         if ( ! $is_designer && ! $is_system_operator ) {
-            wp_send_json_error( array( 'message' => 'Access denied. Designer or System Operator account required.' ) );
+            wp_send_json_error( array( 'message' => 'Access denied. Creator or System Operator account required.' ) );
         }
 
         global $wpdb;
@@ -4356,8 +4867,8 @@ class N88_RFQ_Auth {
         // Validate max 5 invited suppliers
         if ( count( $invited_suppliers ) > 5 ) {
             wp_send_json_error( array(
-                'message' => 'Maximum 5 invited suppliers allowed.',
-                'errors' => array( 'invited_suppliers' => 'Maximum 5 invited suppliers allowed.' ),
+                'message' => 'Maximum 5 invited makers allowed.',
+                'errors' => array( 'invited_suppliers' => 'Maximum 5 invited makers allowed.' ),
             ) );
         }
         
@@ -4366,7 +4877,7 @@ class N88_RFQ_Auth {
         // Validation: Case D - if no invite and toggle OFF, block
         if ( empty( $invited_suppliers ) && ! $allow_system_invites ) {
             wp_send_json_error( array(
-                'message' => 'Invite at least one supplier or allow the system to invite suppliers.',
+                'message' => 'Invite at least one maker or allow the system to invite makers.',
                 'errors' => array( 'routing' => 'At least one routing option must be selected.' ),
             ) );
         }
@@ -4470,7 +4981,7 @@ class N88_RFQ_Auth {
                     } else {
                         // Email doesn't exist or user is not a supplier - send invite email
                         $subject = "You've been invited to bid on an RFQ";
-                        $message = "You've been invited to submit a bid. Create your supplier account to view details.\n\n";
+                        $message = "You've been invited to submit a bid. Create your maker account to view details.\n\n";
                         $message .= "Sign up here: " . home_url( '/supplier/onboarding' ) . "\n";
                         wp_mail( $invite_value, $subject, $message );
                         $invite_emails_sent[] = $invite_value;
@@ -4482,7 +4993,7 @@ class N88_RFQ_Auth {
                     if ( $user && in_array( 'n88_supplier_admin', $user->roles, true ) ) {
                         $invited_supplier_ids[] = $user->ID;
                     } else {
-                        $errors['invited_suppliers'] = 'Supplier "' . esc_html( $invite_value ) . '" not found. Please enter a valid supplier username or email.';
+                        $errors['invited_suppliers'] = 'Maker "' . esc_html( $invite_value ) . '" not found. Please enter a valid maker username or email.';
                     }
                 }
             }
@@ -4490,12 +5001,41 @@ class N88_RFQ_Auth {
             // Remove duplicates from invited supplier IDs
             $invited_supplier_ids = array_unique( $invited_supplier_ids );
 
+            // Check if quantity and dimensions columns exist, add them if they don't (once per submission)
+            $delivery_columns = $wpdb->get_col( "DESCRIBE {$item_delivery_context_table}" );
+            $has_quantity = in_array( 'quantity', $delivery_columns, true );
+            $has_dimensions = in_array( 'dimensions_json', $delivery_columns, true );
+            
+            // Add quantity column if it doesn't exist
+            if ( ! $has_quantity ) {
+                $table_safe = esc_sql( $item_delivery_context_table );
+                $result = $wpdb->query( "ALTER TABLE {$table_safe} ADD COLUMN quantity INT UNSIGNED NULL AFTER shipping_estimate_mode" );
+                if ( $result !== false ) {
+                    $has_quantity = true;
+                    error_log( 'RFQ Submission - Successfully added quantity column to delivery context table' );
+                } else {
+                    error_log( 'RFQ Submission - Failed to add quantity column to delivery context table: ' . $wpdb->last_error );
+                }
+            }
+            
+            // Add dimensions_json column if it doesn't exist
+            if ( ! $has_dimensions ) {
+                $table_safe = esc_sql( $item_delivery_context_table );
+                $result = $wpdb->query( "ALTER TABLE {$table_safe} ADD COLUMN dimensions_json TEXT NULL AFTER quantity" );
+                if ( $result !== false ) {
+                    $has_dimensions = true;
+                    error_log( 'RFQ Submission - Successfully added dimensions_json column to delivery context table' );
+                } else {
+                    error_log( 'RFQ Submission - Failed to add dimensions_json column to delivery context table: ' . $wpdb->last_error );
+                }
+            }
+
             // Process each item
             foreach ( $validated_items as $item_data ) {
                 $item_id = $item_data['item_id'];
                 $item = $item_data['item'];
 
-                // 1. Write/update delivery context
+                // 1. Write/update delivery context (including quantity and dimensions from RFQ submission)
                 $shipping_mode = in_array( $item_data['delivery_country'], array( 'US', 'CA' ), true ) ? 'auto' : 'manual';
 
                 $existing_delivery = $wpdb->get_var( $wpdb->prepare(
@@ -4509,21 +5049,57 @@ class N88_RFQ_Auth {
                     'delivery_postal_code' => ! empty( $item_data['delivery_postal'] ) ? $item_data['delivery_postal'] : null,
                     'shipping_estimate_mode' => $shipping_mode,
                 );
+                
+                // Add quantity and dimensions if columns exist
+                if ( $has_quantity ) {
+                    $delivery_data['quantity'] = $item_data['quantity'];
+                }
+                if ( $has_dimensions ) {
+                    $dimensions_data = array(
+                        'width' => floatval( $item_data['width'] ),
+                        'depth' => floatval( $item_data['depth'] ),
+                        'height' => floatval( $item_data['height'] ),
+                        'unit' => sanitize_text_field( $item_data['dimension_unit'] ),
+                    );
+                    $delivery_data['dimensions_json'] = wp_json_encode( $dimensions_data );
+                    
+                    // Debug: Log dimensions being stored
+                    error_log( 'RFQ Submission - Storing dimensions for item ' . $item_id . ': ' . wp_json_encode( $dimensions_data ) );
+                } else {
+                    error_log( 'RFQ Submission - WARNING: dimensions_json column does not exist for item ' . $item_id );
+                }
+
+                // Build format array dynamically based on columns
+                $format_array = array( '%d', '%s', '%s', '%s' );
+                if ( $has_quantity ) {
+                    $format_array[] = '%d';
+                }
+                if ( $has_dimensions ) {
+                    $format_array[] = '%s';
+                }
 
                 if ( $existing_delivery ) {
-                    $wpdb->update(
+                    $update_result = $wpdb->update(
                         $item_delivery_context_table,
                         $delivery_data,
                         array( 'item_id' => $item_id ),
-                        array( '%d', '%s', '%s', '%s' ),
+                        $format_array,
                         array( '%d' )
                     );
+                    if ( $update_result === false ) {
+                        error_log( 'RFQ Submission - Failed to update delivery context for item ' . $item_id . ': ' . $wpdb->last_error );
+                    }
                 } else {
-                    $wpdb->insert(
+                    $insert_result = $wpdb->insert(
                         $item_delivery_context_table,
                         $delivery_data,
-                        array( '%d', '%s', '%s', '%s' )
+                        $format_array
                     );
+                    if ( $insert_result === false ) {
+                        error_log( 'RFQ Submission - Failed to insert delivery context for item ' . $item_id . ': ' . $wpdb->last_error );
+                    } else {
+                        error_log( 'RFQ Submission - Successfully inserted delivery context for item ' . $item_id . ' with dimensions: ' . ( isset( $delivery_data['dimensions_json'] ) ? $delivery_data['dimensions_json'] : 'none' ) );
+                    }
                 }
 
                 // 2. Create designer_invited routes (for each invited supplier that exists)
@@ -4618,16 +5194,16 @@ class N88_RFQ_Auth {
                 // Toggle ON
                 if ( $has_any_invites ) {
                     // Toggle ON + email added
-                    $message .= ' Your invited supplier(s) will receive this request first. WireFrame (OS) will invite additional suppliers after 24 hours.';
+                    $message .= ' Your invited maker(s) will receive this request first. WireFrame (OS) will invite additional makers after 24 hours.';
                 } else {
                     // Toggle ON + NO email entered
-                    $message .= ' We sent your request to suppliers that match your category and keywords.';
+                    $message .= ' We sent your request to makers that match your category and keywords.';
                 }
             } else {
                 // Toggle OFF - only invited suppliers
                 if ( $has_any_invites ) {
                     // Only email added (toggle OFF)
-                    $message .= ' Your invited supplier(s) will receive this request.';
+                    $message .= ' Your invited maker(s) will receive this request.';
                 }
             }
 

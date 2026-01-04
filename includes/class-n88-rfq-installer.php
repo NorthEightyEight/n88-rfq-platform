@@ -18,6 +18,84 @@ class N88_RFQ_Installer {
     const PHASE_1_2_SCHEMA_VERSION = '1.2.0';
     const PHASE_1_2_SCHEMA_OPTION = 'n88_phase_1_2_schema_version';
 
+    /**
+     * Safely add a foreign key constraint, suppressing errors if it fails
+     * 
+     * @param string $table_name Table name (will be escaped)
+     * @param string $constraint_name Constraint name
+     * @param string $column_name Column name in the table
+     * @param string $referenced_table Referenced table name (will be escaped)
+     * @param string $referenced_column Referenced column name
+     * @param string $on_delete ON DELETE action (e.g., 'CASCADE', 'SET NULL')
+     * @return bool True if constraint was added or already exists, false on failure
+     */
+    private static function safe_add_foreign_key( $table_name, $constraint_name, $column_name, $referenced_table, $referenced_column, $on_delete = 'CASCADE' ) {
+        global $wpdb;
+        
+        // Escape table and column names
+        $table_safe = preg_replace( '/[^a-zA-Z0-9_]/', '', $table_name );
+        $referenced_table_safe = preg_replace( '/[^a-zA-Z0-9_]/', '', $referenced_table );
+        $column_safe = preg_replace( '/[^a-zA-Z0-9_]/', '', $column_name );
+        $referenced_column_safe = preg_replace( '/[^a-zA-Z0-9_]/', '', $referenced_column );
+        $constraint_safe = preg_replace( '/[^a-zA-Z0-9_]/', '', $constraint_name );
+        $on_delete_safe = strtoupper( $on_delete ) === 'SET NULL' ? 'SET NULL' : 'CASCADE';
+        
+        // Check if constraint already exists and is valid
+        $exists = $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE 
+            WHERE TABLE_SCHEMA = %s 
+            AND TABLE_NAME = %s 
+            AND CONSTRAINT_NAME = %s
+            AND REFERENCED_TABLE_NAME = %s
+            AND REFERENCED_COLUMN_NAME = %s",
+            DB_NAME,
+            $table_name,
+            $constraint_name,
+            $referenced_table,
+            $referenced_column
+        ) );
+        
+        if ( $exists > 0 ) {
+            return true; // Constraint already exists and is valid
+        }
+        
+        // If constraint exists but is invalid (wrong referenced column), drop it first
+        $exists_any = $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE 
+            WHERE TABLE_SCHEMA = %s 
+            AND TABLE_NAME = %s 
+            AND CONSTRAINT_NAME = %s",
+            DB_NAME,
+            $table_name,
+            $constraint_name
+        ) );
+        
+        if ( $exists_any > 0 ) {
+            // Drop the broken constraint (suppress errors)
+            $wpdb->suppress_errors( true );
+            @$wpdb->query( "ALTER TABLE {$table_safe} DROP FOREIGN KEY {$constraint_safe}" );
+            $wpdb->suppress_errors( false );
+        }
+        
+        // Suppress errors and attempt to add constraint
+        $wpdb->suppress_errors( true );
+        $old_error = $wpdb->last_error;
+        $old_query = $wpdb->last_query;
+        
+        $query = "ALTER TABLE {$table_safe} ADD CONSTRAINT {$constraint_safe} FOREIGN KEY ({$column_safe}) REFERENCES {$referenced_table_safe}({$referenced_column_safe}) ON DELETE {$on_delete_safe}";
+        $result = @$wpdb->query( $query );
+        
+        // Clear the error if the query failed (constraint can't be added for valid reasons)
+        if ( $result === false || ! empty( $wpdb->last_error ) ) {
+            $wpdb->last_error = '';
+            $wpdb->last_query = $old_query;
+        }
+        
+        $wpdb->suppress_errors( false );
+        
+        return $result !== false;
+    }
+
     public static function activate() {
         global $wpdb;
 
@@ -1315,38 +1393,47 @@ class N88_RFQ_Installer {
         $categories_table_safe = preg_replace( '/[^a-zA-Z0-9_]/', '', $categories_table );
         $users_table_safe = preg_replace( '/[^a-zA-Z0-9_]/', '', $users_table );
 
-        // Check if foreign keys exist before adding
-        $supplier_fks = $wpdb->get_results( "SHOW CREATE TABLE {$supplier_table_safe}" );
-        $designer_fks = $wpdb->get_results( "SHOW CREATE TABLE {$designer_table_safe}" );
+        // Check if foreign keys exist before adding (using information_schema for reliability)
+        $supplier_has_fk_user = $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE 
+            WHERE TABLE_SCHEMA = %s 
+            AND TABLE_NAME = %s 
+            AND CONSTRAINT_NAME = 'fk_supplier_user'",
+            DB_NAME,
+            $supplier_profiles_table
+        ) );
 
-        $supplier_has_fk_user = false;
-        $supplier_has_fk_category = false;
-        $designer_has_fk_user = false;
+        $supplier_has_fk_category = $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE 
+            WHERE TABLE_SCHEMA = %s 
+            AND TABLE_NAME = %s 
+            AND CONSTRAINT_NAME = 'fk_supplier_category'",
+            DB_NAME,
+            $supplier_profiles_table
+        ) );
 
-        if ( ! empty( $supplier_fks ) ) {
-            $create_statement = $supplier_fks[0]->{'Create Table'};
-            $supplier_has_fk_user = strpos( $create_statement, 'fk_supplier_user' ) !== false;
-            $supplier_has_fk_category = strpos( $create_statement, 'fk_supplier_category' ) !== false;
-        }
-
-        if ( ! empty( $designer_fks ) ) {
-            $create_statement = $designer_fks[0]->{'Create Table'};
-            $designer_has_fk_user = strpos( $create_statement, 'fk_designer_user' ) !== false;
-        }
+        $designer_has_fk_user = $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE 
+            WHERE TABLE_SCHEMA = %s 
+            AND TABLE_NAME = %s 
+            AND CONSTRAINT_NAME = 'fk_designer_user'",
+            DB_NAME,
+            $designer_profiles_table
+        ) );
 
         // Add foreign key: supplier_id -> wp_users.ID
         if ( ! $supplier_has_fk_user ) {
-            $wpdb->query( "ALTER TABLE {$supplier_table_safe} ADD CONSTRAINT fk_supplier_user FOREIGN KEY (supplier_id) REFERENCES {$users_table_safe}(ID) ON DELETE CASCADE" );
+            self::safe_add_foreign_key( $supplier_profiles_table, 'fk_supplier_user', 'supplier_id', $users_table, 'ID', 'CASCADE' );
         }
 
         // Add foreign key: primary_category_id -> n88_categories.category_id
         if ( ! $supplier_has_fk_category ) {
-            $wpdb->query( "ALTER TABLE {$supplier_table_safe} ADD CONSTRAINT fk_supplier_category FOREIGN KEY (primary_category_id) REFERENCES {$categories_table_safe}(category_id) ON DELETE SET NULL" );
+            self::safe_add_foreign_key( $supplier_profiles_table, 'fk_supplier_category', 'primary_category_id', $categories_table, 'category_id', 'SET NULL' );
         }
 
         // Add foreign key: designer_id -> wp_users.ID
         if ( ! $designer_has_fk_user ) {
-            $wpdb->query( "ALTER TABLE {$designer_table_safe} ADD CONSTRAINT fk_designer_user FOREIGN KEY (designer_id) REFERENCES {$users_table_safe}(ID) ON DELETE CASCADE" );
+            self::safe_add_foreign_key( $designer_profiles_table, 'fk_designer_user', 'designer_id', $users_table, 'ID', 'CASCADE' );
         }
     }
 
@@ -1409,50 +1496,61 @@ class N88_RFQ_Installer {
         $categories_table_safe = preg_replace( '/[^a-zA-Z0-9_]/', '', $categories_table );
         $users_table_safe = preg_replace( '/[^a-zA-Z0-9_]/', '', $users_table );
 
-        // Check if foreign keys exist before adding
-        $keywords_fks = $wpdb->get_results( "SHOW CREATE TABLE {$keywords_table_safe}" );
-        $map_fks = $wpdb->get_results( "SHOW CREATE TABLE {$supplier_keyword_map_table_safe}" );
-        $freeform_fks = $wpdb->get_results( "SHOW CREATE TABLE {$supplier_keyword_freeform_table_safe}" );
+        // Check if foreign keys exist before adding (using information_schema for reliability)
+        $keywords_has_fk_category = $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE 
+            WHERE TABLE_SCHEMA = %s 
+            AND TABLE_NAME = %s 
+            AND CONSTRAINT_NAME = 'fk_keyword_category'",
+            DB_NAME,
+            $keywords_table
+        ) );
 
-        $keywords_has_fk_category = false;
-        $map_has_fk_supplier = false;
-        $map_has_fk_keyword = false;
-        $freeform_has_fk_supplier = false;
+        $map_has_fk_supplier = $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE 
+            WHERE TABLE_SCHEMA = %s 
+            AND TABLE_NAME = %s 
+            AND CONSTRAINT_NAME = 'fk_map_supplier'",
+            DB_NAME,
+            $supplier_keyword_map_table
+        ) );
 
-        if ( ! empty( $keywords_fks ) ) {
-            $create_statement = $keywords_fks[0]->{'Create Table'};
-            $keywords_has_fk_category = strpos( $create_statement, 'fk_keyword_category' ) !== false;
-        }
+        $map_has_fk_keyword = $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE 
+            WHERE TABLE_SCHEMA = %s 
+            AND TABLE_NAME = %s 
+            AND CONSTRAINT_NAME = 'fk_map_keyword'",
+            DB_NAME,
+            $supplier_keyword_map_table
+        ) );
 
-        if ( ! empty( $map_fks ) ) {
-            $create_statement = $map_fks[0]->{'Create Table'};
-            $map_has_fk_supplier = strpos( $create_statement, 'fk_map_supplier' ) !== false;
-            $map_has_fk_keyword = strpos( $create_statement, 'fk_map_keyword' ) !== false;
-        }
-
-        if ( ! empty( $freeform_fks ) ) {
-            $create_statement = $freeform_fks[0]->{'Create Table'};
-            $freeform_has_fk_supplier = strpos( $create_statement, 'fk_freeform_supplier' ) !== false;
-        }
+        $freeform_has_fk_supplier = $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE 
+            WHERE TABLE_SCHEMA = %s 
+            AND TABLE_NAME = %s 
+            AND CONSTRAINT_NAME = 'fk_freeform_supplier'",
+            DB_NAME,
+            $supplier_keyword_freeform_table
+        ) );
 
         // Add foreign key: category_id -> n88_categories.category_id
         if ( ! $keywords_has_fk_category ) {
-            $wpdb->query( "ALTER TABLE {$keywords_table_safe} ADD CONSTRAINT fk_keyword_category FOREIGN KEY (category_id) REFERENCES {$categories_table_safe}(category_id) ON DELETE SET NULL" );
+            self::safe_add_foreign_key( $keywords_table, 'fk_keyword_category', 'category_id', $categories_table, 'category_id', 'SET NULL' );
         }
 
         // Add foreign key: supplier_id -> wp_users.ID (map table)
         if ( ! $map_has_fk_supplier ) {
-            $wpdb->query( "ALTER TABLE {$supplier_keyword_map_table_safe} ADD CONSTRAINT fk_map_supplier FOREIGN KEY (supplier_id) REFERENCES {$users_table_safe}(ID) ON DELETE CASCADE" );
+            self::safe_add_foreign_key( $supplier_keyword_map_table, 'fk_map_supplier', 'supplier_id', $users_table, 'ID', 'CASCADE' );
         }
 
         // Add foreign key: keyword_id -> n88_keywords.keyword_id (map table)
         if ( ! $map_has_fk_keyword ) {
-            $wpdb->query( "ALTER TABLE {$supplier_keyword_map_table_safe} ADD CONSTRAINT fk_map_keyword FOREIGN KEY (keyword_id) REFERENCES {$keywords_table_safe}(keyword_id) ON DELETE CASCADE" );
+            self::safe_add_foreign_key( $supplier_keyword_map_table, 'fk_map_keyword', 'keyword_id', $keywords_table, 'keyword_id', 'CASCADE' );
         }
 
         // Add foreign key: supplier_id -> wp_users.ID (freeform table)
         if ( ! $freeform_has_fk_supplier ) {
-            $wpdb->query( "ALTER TABLE {$supplier_keyword_freeform_table_safe} ADD CONSTRAINT fk_freeform_supplier FOREIGN KEY (supplier_id) REFERENCES {$users_table_safe}(ID) ON DELETE CASCADE" );
+            self::safe_add_foreign_key( $supplier_keyword_freeform_table, 'fk_freeform_supplier', 'supplier_id', $users_table, 'ID', 'CASCADE' );
         }
     }
 
@@ -1765,26 +1863,33 @@ class N88_RFQ_Installer {
         $designer_practice_map_table_safe = preg_replace( '/[^a-zA-Z0-9_]/', '', $designer_practice_map_table );
         $users_table_safe = preg_replace( '/[^a-zA-Z0-9_]/', '', $users_table );
 
-        // Check if foreign keys exist before adding
-        $map_fks = $wpdb->get_results( "SHOW CREATE TABLE {$designer_practice_map_table_safe}" );
+        // Check if foreign keys exist before adding (using information_schema for reliability)
+        $map_has_fk_designer = $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE 
+            WHERE TABLE_SCHEMA = %s 
+            AND TABLE_NAME = %s 
+            AND CONSTRAINT_NAME = 'fk_practice_map_designer'",
+            DB_NAME,
+            $designer_practice_map_table
+        ) );
 
-        $map_has_fk_designer = false;
-        $map_has_fk_practice = false;
-
-        if ( ! empty( $map_fks ) ) {
-            $create_statement = $map_fks[0]->{'Create Table'};
-            $map_has_fk_designer = strpos( $create_statement, 'fk_practice_map_designer' ) !== false;
-            $map_has_fk_practice = strpos( $create_statement, 'fk_practice_map_practice' ) !== false;
-        }
+        $map_has_fk_practice = $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE 
+            WHERE TABLE_SCHEMA = %s 
+            AND TABLE_NAME = %s 
+            AND CONSTRAINT_NAME = 'fk_practice_map_practice'",
+            DB_NAME,
+            $designer_practice_map_table
+        ) );
 
         // Add foreign key: designer_id -> wp_users.ID (map table)
         if ( ! $map_has_fk_designer ) {
-            $wpdb->query( "ALTER TABLE {$designer_practice_map_table_safe} ADD CONSTRAINT fk_practice_map_designer FOREIGN KEY (designer_id) REFERENCES {$users_table_safe}(ID) ON DELETE CASCADE" );
+            self::safe_add_foreign_key( $designer_practice_map_table, 'fk_practice_map_designer', 'designer_id', $users_table, 'ID', 'CASCADE' );
         }
 
         // Add foreign key: practice_id -> n88_practice_types.practice_id (map table)
         if ( ! $map_has_fk_practice ) {
-            $wpdb->query( "ALTER TABLE {$designer_practice_map_table_safe} ADD CONSTRAINT fk_practice_map_practice FOREIGN KEY (practice_id) REFERENCES {$practice_types_table_safe}(practice_id) ON DELETE CASCADE" );
+            self::safe_add_foreign_key( $designer_practice_map_table, 'fk_practice_map_practice', 'practice_id', $practice_types_table, 'practice_id', 'CASCADE' );
         }
     }
 
@@ -1960,19 +2065,19 @@ class N88_RFQ_Installer {
             $item_delivery_context_table
         ) );
 
-        // Add foreign key: item_id -> n88_items.item_id (routes table)
+        // Add foreign key: item_id -> n88_items.id (routes table)
         if ( ! $fk_routes_item ) {
-            $wpdb->query( "ALTER TABLE {$rfq_routes_table_safe} ADD CONSTRAINT fk_routes_item FOREIGN KEY (item_id) REFERENCES {$items_table_safe}(item_id) ON DELETE CASCADE" );
+            self::safe_add_foreign_key( $rfq_routes_table, 'fk_routes_item', 'item_id', $items_table, 'id', 'CASCADE' );
         }
 
         // Add foreign key: supplier_id -> wp_users.ID (routes table)
         if ( ! $fk_routes_supplier ) {
-            $wpdb->query( "ALTER TABLE {$rfq_routes_table_safe} ADD CONSTRAINT fk_routes_supplier FOREIGN KEY (supplier_id) REFERENCES {$users_table_safe}(ID) ON DELETE CASCADE" );
+            self::safe_add_foreign_key( $rfq_routes_table, 'fk_routes_supplier', 'supplier_id', $users_table, 'ID', 'CASCADE' );
         }
 
-        // Add foreign key: item_id -> n88_items.item_id (delivery context table)
+        // Add foreign key: item_id -> n88_items.id (delivery context table)
         if ( ! $fk_delivery_item ) {
-            $wpdb->query( "ALTER TABLE {$item_delivery_context_table_safe} ADD CONSTRAINT fk_delivery_item FOREIGN KEY (item_id) REFERENCES {$items_table_safe}(item_id) ON DELETE CASCADE" );
+            self::safe_add_foreign_key( $item_delivery_context_table, 'fk_delivery_item', 'item_id', $items_table, 'id', 'CASCADE' );
         }
     }
 
@@ -2065,19 +2170,19 @@ class N88_RFQ_Installer {
             $bid_media_links_table
         ) );
 
-        // Add foreign key: item_id -> n88_items.item_id (bids table)
+        // Add foreign key: item_id -> n88_items.id (bids table)
         if ( ! $fk_bids_item ) {
-            $wpdb->query( "ALTER TABLE {$item_bids_table_safe} ADD CONSTRAINT fk_bids_item FOREIGN KEY (item_id) REFERENCES {$items_table_safe}(item_id) ON DELETE CASCADE" );
+            self::safe_add_foreign_key( $item_bids_table, 'fk_bids_item', 'item_id', $items_table, 'id', 'CASCADE' );
         }
 
         // Add foreign key: supplier_id -> wp_users.ID (bids table)
         if ( ! $fk_bids_supplier ) {
-            $wpdb->query( "ALTER TABLE {$item_bids_table_safe} ADD CONSTRAINT fk_bids_supplier FOREIGN KEY (supplier_id) REFERENCES {$users_table_safe}(ID) ON DELETE CASCADE" );
+            self::safe_add_foreign_key( $item_bids_table, 'fk_bids_supplier', 'supplier_id', $users_table, 'ID', 'CASCADE' );
         }
 
         // Add foreign key: bid_id -> n88_item_bids.bid_id (media links table)
         if ( ! $fk_media_bid ) {
-            $wpdb->query( "ALTER TABLE {$bid_media_links_table_safe} ADD CONSTRAINT fk_media_bid FOREIGN KEY (bid_id) REFERENCES {$item_bids_table_safe}(bid_id) ON DELETE CASCADE" );
+            self::safe_add_foreign_key( $bid_media_links_table, 'fk_media_bid', 'bid_id', $item_bids_table, 'bid_id', 'CASCADE' );
         }
     }
 

@@ -89,6 +89,7 @@ class N88_Items {
         add_action( 'wp_ajax_n88_create_item', array( $this, 'ajax_create_item' ) );
         add_action( 'wp_ajax_n88_update_item', array( $this, 'ajax_update_item' ) );
         add_action( 'wp_ajax_n88_save_item_facts', array( $this, 'ajax_save_item_facts' ) );
+        add_action( 'wp_ajax_n88_upload_inspiration_image', array( $this, 'ajax_upload_inspiration_image' ) );
     }
 
     /**
@@ -1240,7 +1241,48 @@ class N88_Items {
         }
         
         if ( isset( $payload['inspiration'] ) ) {
-            $meta['inspiration'] = $payload['inspiration'];
+            // Validate and sanitize inspiration array
+            $inspiration = $payload['inspiration'];
+            if ( is_array( $inspiration ) ) {
+                $valid_inspiration = array();
+                foreach ( $inspiration as $insp_item ) {
+                    // Only save items with valid structure - must have either a valid ID or a valid HTTP URL
+                    if ( ! is_array( $insp_item ) ) {
+                        continue;
+                    }
+                    
+                    // Check for valid ID (must be numeric and > 0)
+                    // Note: isset() returns false for null, so we need to check array_key_exists or use null coalescing
+                    $id_value = isset( $insp_item['id'] ) ? $insp_item['id'] : null;
+                    $has_valid_id = $id_value !== null && 
+                                    $id_value !== '' &&
+                                    is_numeric( $id_value ) && 
+                                    intval( $id_value ) > 0;
+                    
+                    // Check for valid URL (must be non-empty and start with http/https)
+                    $url = isset( $insp_item['url'] ) ? trim( $insp_item['url'] ) : '';
+                    $has_valid_url = ! empty( $url ) && 
+                                    $url !== '' &&
+                                    ( strpos( $url, 'http://' ) === 0 || strpos( $url, 'https://' ) === 0 );
+                    
+                    // Only save if it has either a valid ID or a valid URL
+                    if ( $has_valid_id || $has_valid_url ) {
+                        $valid_inspiration[] = array(
+                            'type' => isset( $insp_item['type'] ) ? sanitize_text_field( $insp_item['type'] ) : 'image',
+                            'id' => $has_valid_id ? intval( $id_value ) : null,
+                            'url' => $has_valid_url ? esc_url_raw( $url ) : '',
+                            'title' => isset( $insp_item['title'] ) ? sanitize_text_field( $insp_item['title'] ) : '',
+                        );
+                    } else {
+                        error_log( 'Item Facts Save - Skipping invalid inspiration item for item ' . $item_id . ': ' . wp_json_encode( $insp_item ) );
+                    }
+                }
+                $meta['inspiration'] = $valid_inspiration;
+                error_log( 'Item Facts Save - Saved ' . count( $valid_inspiration ) . ' inspiration images for item ' . $item_id . ': ' . wp_json_encode( $valid_inspiration ) );
+            } else {
+                error_log( 'Item Facts Save - Inspiration is not an array for item ' . $item_id );
+                $meta['inspiration'] = array();
+            }
         }
         
         // Update meta_json
@@ -1276,6 +1318,149 @@ class N88_Items {
         wp_send_json_success( array(
             'message' => 'Item facts saved successfully.',
             'item_id' => $item_id,
+        ) );
+    }
+
+    /**
+     * AJAX: Upload inspiration image to WordPress media library
+     * This ensures all inspiration images are properly stored in WordPress media library
+     */
+    public function ajax_upload_inspiration_image() {
+        // Nonce verification
+        N88_RFQ_Helpers::verify_ajax_nonce();
+        
+        // Login check
+        if ( ! is_user_logged_in() ) {
+            wp_send_json_error( array( 'message' => 'Authentication required.' ) );
+            return;
+        }
+        
+        // Check if file was uploaded
+        if ( empty( $_FILES['inspiration_image'] ) || $_FILES['inspiration_image']['error'] !== UPLOAD_ERR_OK ) {
+            $error_msg = 'No file uploaded or upload error occurred.';
+            if ( ! empty( $_FILES['inspiration_image']['error'] ) ) {
+                $error_codes = array(
+                    UPLOAD_ERR_INI_SIZE => 'File exceeds upload_max_filesize',
+                    UPLOAD_ERR_FORM_SIZE => 'File exceeds MAX_FILE_SIZE',
+                    UPLOAD_ERR_PARTIAL => 'File was only partially uploaded',
+                    UPLOAD_ERR_NO_FILE => 'No file was uploaded',
+                    UPLOAD_ERR_NO_TMP_DIR => 'Missing temporary folder',
+                    UPLOAD_ERR_CANT_WRITE => 'Failed to write file to disk',
+                    UPLOAD_ERR_EXTENSION => 'File upload stopped by extension',
+                );
+                $error_code = $_FILES['inspiration_image']['error'];
+                $error_msg = isset( $error_codes[ $error_code ] ) ? $error_codes[ $error_code ] : 'Upload error code: ' . $error_code;
+            }
+            wp_send_json_error( array( 'message' => $error_msg ) );
+            return;
+        }
+        
+        // Verify it's an image
+        $file_type = wp_check_filetype( $_FILES['inspiration_image']['name'] );
+        $allowed_types = array( 'jpg', 'jpeg', 'png', 'gif', 'webp' );
+        if ( ! in_array( strtolower( $file_type['ext'] ), $allowed_types, true ) ) {
+            wp_send_json_error( array( 'message' => 'Invalid file type. Only images are allowed (JPG, PNG, GIF, WEBP).' ) );
+            return;
+        }
+        
+        require_once( ABSPATH . 'wp-admin/includes/file.php' );
+        require_once( ABSPATH . 'wp-admin/includes/media.php' );
+        require_once( ABSPATH . 'wp-admin/includes/image.php' );
+        
+        // Check file size (max 10MB)
+        $max_size = 10 * 1024 * 1024; // 10MB in bytes
+        if ( $_FILES['inspiration_image']['size'] > $max_size ) {
+            wp_send_json_error( array( 
+                'message' => 'File size exceeds maximum allowed size of 10MB.' 
+            ) );
+            return;
+        }
+        
+        // Use wp_handle_upload first to process the file
+        $upload = wp_handle_upload( $_FILES['inspiration_image'], array( 
+            'test_form' => false,
+            'mimes' => array(
+                'jpg|jpeg|jpe' => 'image/jpeg',
+                'gif' => 'image/gif',
+                'png' => 'image/png',
+                'webp' => 'image/webp',
+            ),
+        ) );
+        
+        if ( isset( $upload['error'] ) ) {
+            error_log( 'Inspiration image upload failed - wp_handle_upload error: ' . $upload['error'] );
+            wp_send_json_error( array( 
+                'message' => 'Failed to upload image: ' . $upload['error'] 
+            ) );
+            return;
+        }
+        
+        // Verify upload file exists
+        if ( ! isset( $upload['file'] ) || ! file_exists( $upload['file'] ) ) {
+            error_log( 'Inspiration image upload failed - Upload file does not exist: ' . ( isset( $upload['file'] ) ? $upload['file'] : 'not set' ) );
+            wp_send_json_error( array( 
+                'message' => 'Uploaded file not found. Please try again.' 
+            ) );
+            return;
+        }
+        
+        // Create attachment in media library
+        $user_id = get_current_user_id();
+        $attachment = array(
+            'post_mime_type' => $upload['type'],
+            'post_title'     => sanitize_file_name( pathinfo( $upload['file'], PATHINFO_FILENAME ) ),
+            'post_content'   => '',
+            'post_status'    => 'inherit',
+            'post_author'    => $user_id, // Set author so it appears in user's media library
+        );
+        
+        $attachment_id = wp_insert_attachment( $attachment, $upload['file'] );
+        
+        if ( is_wp_error( $attachment_id ) ) {
+            error_log( 'Inspiration image upload failed - wp_insert_attachment error: ' . $attachment_id->get_error_message() );
+            wp_send_json_error( array( 
+                'message' => 'Failed to create attachment: ' . $attachment_id->get_error_message() 
+            ) );
+            return;
+        }
+        
+        // Validate attachment ID is valid
+        if ( ! $attachment_id || $attachment_id <= 0 ) {
+            error_log( 'Inspiration image upload failed - Invalid attachment ID: ' . $attachment_id );
+            wp_send_json_error( array( 
+                'message' => 'Failed to create attachment. Invalid attachment ID.' 
+            ) );
+            return;
+        }
+        
+        // Generate attachment metadata (creates thumbnails, etc.)
+        $attach_data = wp_generate_attachment_metadata( $attachment_id, $upload['file'] );
+        wp_update_attachment_metadata( $attachment_id, $attach_data );
+        
+        // Get attachment data
+        $attachment_url = wp_get_attachment_url( $attachment_id );
+        $attachment_title = get_the_title( $attachment_id );
+        $attachment_filename = basename( get_attached_file( $attachment_id ) );
+        
+        // Validate that we have both ID and URL before returning
+        if ( ! $attachment_id || $attachment_id <= 0 || empty( $attachment_url ) ) {
+            error_log( 'Inspiration image upload failed - Missing ID or URL. ID: ' . $attachment_id . ', URL: ' . ( $attachment_url ? 'present' : 'missing' ) );
+            wp_send_json_error( array( 
+                'message' => 'Failed to retrieve attachment data. Please try again.' 
+            ) );
+            return;
+        }
+        
+        // Log success for debugging
+        error_log( 'Inspiration image uploaded successfully - Attachment ID: ' . $attachment_id . ', URL: ' . $attachment_url );
+        
+        // Return attachment data for frontend
+        wp_send_json_success( array(
+            'id' => intval( $attachment_id ),
+            'url' => esc_url_raw( $attachment_url ),
+            'full_url' => esc_url_raw( $attachment_url ),
+            'title' => $attachment_title ? sanitize_text_field( $attachment_title ) : sanitize_file_name( $attachment_filename ),
+            'filename' => sanitize_file_name( $attachment_filename ),
         ) );
     }
 }

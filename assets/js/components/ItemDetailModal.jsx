@@ -95,8 +95,43 @@ const ItemDetailModal = ({ item, isOpen, onClose, onSave, priceRequested = false
     const [depth, setDepth] = React.useState(item.dims?.d ? String(item.dims.d) : '');
     const [height, setHeight] = React.useState(item.dims?.h ? String(item.dims.h) : '');
     const [unit, setUnit] = React.useState(item.dims?.unit || 'in');
-    const [inspiration, setInspiration] = React.useState(item.inspiration || []);
+    
+    // Helper function to validate inspiration items
+    const validateInspirationItem = (insp) => {
+        if (!insp || typeof insp !== 'object') return false;
+        const hasId = insp.id && Number.isInteger(Number(insp.id)) && Number(insp.id) > 0;
+        const url = insp.url ? String(insp.url).trim() : '';
+        const hasValidUrl = url && 
+            url.length > 0 &&
+            (url.startsWith('http://') || url.startsWith('https://')) && 
+            !url.startsWith('data:');
+        return hasId || hasValidUrl;
+    };
+    
+    // Filter initial inspiration to only include valid items
+    const initialInspiration = (item.inspiration || []).filter(validateInspirationItem);
+    const [inspiration, setInspiration] = React.useState(initialInspiration);
     const [isSaving, setIsSaving] = React.useState(false);
+    const [isUploadingInspiration, setIsUploadingInspiration] = React.useState(false);
+    
+    // Update inspiration when item changes (if modal is reopened with different item)
+    React.useEffect(() => {
+        const validInspiration = (item.inspiration || []).filter(validateInspirationItem);
+        setInspiration(validInspiration);
+    }, [item.id, item.inspiration]);
+    
+    // Prevent body scroll when modal is open (fix double scrollbar issue)
+    React.useEffect(() => {
+        if (isOpen) {
+            document.body.style.overflow = 'hidden';
+        } else {
+            document.body.style.overflow = '';
+        }
+        // Cleanup: restore scroll when component unmounts
+        return () => {
+            document.body.style.overflow = '';
+        };
+    }, [isOpen]);
     
     // Get item ID and status
     const itemId = item.id || item.item_id || '';
@@ -162,9 +197,58 @@ const ItemDetailModal = ({ item, isOpen, onClose, onSave, priceRequested = false
     
     // Handle save
     const handleSave = async () => {
+        // Prevent save if uploads are in progress
+        if (isUploadingInspiration) {
+            alert('Please wait for image uploads to complete before saving.');
+            return;
+        }
+        
         setIsSaving(true);
         
         try {
+            // Validate and filter inspiration images - only keep ones with valid attachment IDs or URLs
+            const validInspiration = inspiration.filter(insp => {
+                if (!insp || typeof insp !== 'object') {
+                    console.warn('Filtering out invalid inspiration image (not an object):', insp);
+                    return false;
+                }
+                
+                // Must have either an attachment ID or a valid URL (not base64 data URL)
+                const hasId = insp.id && Number.isInteger(Number(insp.id)) && Number(insp.id) > 0;
+                const url = insp.url ? String(insp.url).trim() : '';
+                const hasValidUrl = url && 
+                    url.length > 0 &&
+                    (url.startsWith('http://') || url.startsWith('https://')) && 
+                    !url.startsWith('data:');
+                
+                if (!hasId && !hasValidUrl) {
+                    console.warn('Filtering out invalid inspiration image (no valid ID or URL):', insp);
+                    return false;
+                }
+                
+                return true;
+            }).map(insp => {
+                // Normalize inspiration item structure - only include valid data
+                const url = insp.url ? String(insp.url).trim() : '';
+                const hasValidUrl = url && (url.startsWith('http://') || url.startsWith('https://'));
+                
+                return {
+                    type: insp.type || 'image',
+                    id: (insp.id && Number.isInteger(Number(insp.id)) && Number(insp.id) > 0) ? Number(insp.id) : null,
+                    url: hasValidUrl ? url : '',
+                    title: insp.title || insp.filename || 'Reference image',
+                };
+            });
+            
+            console.log('Saving inspiration images:', validInspiration.length, 'valid images out of', inspiration.length, 'total');
+            
+            // Double-check: if we filtered out images, warn user
+            if (inspiration.length > 0 && validInspiration.length === 0) {
+                alert('Warning: All inspiration images were invalid and will not be saved. Please re-upload them.');
+                setIsSaving(false);
+                return;
+            }
+            
             // Prepare payload
             const dimsCm = computedValues.dimsCm;
             const payload = {
@@ -181,7 +265,7 @@ const ItemDetailModal = ({ item, isOpen, onClose, onSave, priceRequested = false
                 cbm: computedValues.cbm,
                 sourcing_type: computedValues.sourcingType,
                 timeline_type: computedValues.timelineType,
-                inspiration,
+                inspiration: validInspiration, // Use validated inspiration array
             };
             
             // Update item in store
@@ -202,32 +286,140 @@ const ItemDetailModal = ({ item, isOpen, onClose, onSave, priceRequested = false
         }
     };
     
-    // Handle inspiration image upload via file input
-    const handleInspirationFileChange = (e) => {
+    // Handle inspiration image upload via file input - upload to WordPress media library
+    const handleInspirationFileChange = async (e) => {
         const files = e.target.files;
         if (!files || files.length === 0) return;
         
-        const newInspiration = [...inspiration];
+        const imageFiles = Array.from(files).filter(file => file.type.startsWith('image/'));
+        if (imageFiles.length === 0) {
+            alert('Please select image files only.');
+            e.target.value = '';
+            return;
+        }
         
-        Array.from(files).forEach((file) => {
-            if (file.type.startsWith('image/')) {
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                    newInspiration.push({
-                        type: 'image',
-                        url: event.target.result,
-                        id: null,
-                        title: file.name,
-                        file: file
+        // Get AJAX URL and nonce
+        const ajaxUrl = window.n88BoardData?.ajaxUrl || window.n88?.ajaxUrl || '/wp-admin/admin-ajax.php';
+        const nonce = window.n88BoardData?.nonce || window.n88?.nonce || '';
+        
+        if (!nonce) {
+            console.error('Nonce not found. Available:', {
+                n88BoardData: window.n88BoardData,
+                n88: window.n88
+            });
+            alert('Security token missing. Please refresh the page and try again.');
+            e.target.value = '';
+            return;
+        }
+        
+        // Set uploading state
+        setIsUploadingInspiration(true);
+        
+        console.log('Uploading inspiration images:', imageFiles.length, 'files');
+        
+        try {
+            // Upload each file to WordPress media library
+            const uploadPromises = imageFiles.map(async (file) => {
+                const formData = new FormData();
+                formData.append('action', 'n88_upload_inspiration_image');
+                formData.append('inspiration_image', file);
+                formData.append('nonce', nonce);
+                
+                console.log('Uploading file:', file.name, 'Size:', file.size, 'Type:', file.type);
+                
+                try {
+                    const response = await fetch(ajaxUrl, {
+                        method: 'POST',
+                        body: formData,
                     });
-                    setInspiration([...newInspiration]);
-                };
-                reader.readAsDataURL(file);
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    
+                    const data = await response.json();
+                    console.log('Upload response:', data);
+                    
+                    // Strict validation: must have success, data, id (numeric > 0), and url (non-empty string)
+                    if (data.success && 
+                        data.data && 
+                        data.data.id && 
+                        Number.isInteger(Number(data.data.id)) && 
+                        Number(data.data.id) > 0 &&
+                        data.data.url && 
+                        typeof data.data.url === 'string' && 
+                        data.data.url.trim().length > 0 &&
+                        (data.data.url.startsWith('http://') || data.data.url.startsWith('https://'))) {
+                        console.log('Image uploaded successfully:', {
+                            id: data.data.id,
+                            url: data.data.url,
+                            title: data.data.title
+                        });
+                        return {
+                            type: 'image',
+                            url: data.data.url.trim(),
+                            id: Number(data.data.id),
+                            title: data.data.title || data.data.filename || file.name,
+                        };
+                    } else {
+                        const errorMsg = data.data?.message || 'Upload failed - missing or invalid data';
+                        console.error('Failed to upload image:', errorMsg, {
+                            success: data.success,
+                            hasData: !!data.data,
+                            hasId: !!(data.data && data.data.id),
+                            idValue: data.data?.id,
+                            hasUrl: !!(data.data && data.data.url),
+                            urlValue: data.data?.url ? (data.data.url.substring(0, 50) + '...') : 'missing',
+                            fullResponse: data
+                        });
+                        alert('Failed to upload ' + file.name + ': ' + errorMsg);
+                        return null;
+                    }
+                } catch (error) {
+                    console.error('Error uploading image:', error);
+                    alert('Error uploading ' + file.name + ': ' + error.message);
+                    return null;
+                }
+            });
+            
+            // Wait for all uploads to complete
+            const uploadedImages = await Promise.all(uploadPromises);
+            
+            // Filter out failed uploads - only add images with valid IDs and URLs
+            const validImages = uploadedImages.filter(img => {
+                if (!img || typeof img !== 'object') return false;
+                const hasId = img.id && Number.isInteger(Number(img.id)) && Number(img.id) > 0;
+                const url = img.url ? String(img.url).trim() : '';
+                const hasUrl = url && 
+                    url.length > 0 &&
+                    (url.startsWith('http://') || url.startsWith('https://')) && 
+                    !url.startsWith('data:');
+                const isValid = hasId && hasUrl;
+                if (!isValid) {
+                    console.warn('Filtering out invalid uploaded image:', img);
+                }
+                return isValid;
+            });
+            
+            if (validImages.length > 0) {
+                console.log('Adding', validImages.length, 'images to inspiration array');
+                setInspiration([...inspiration, ...validImages]);
+            } else {
+                console.warn('No images were successfully uploaded');
+                if (uploadedImages.length > 0) {
+                    alert('No images were successfully uploaded. Please try again.');
+                } else if (imageFiles.length > 0) {
+                    alert('Failed to upload images. Please check your connection and try again.');
+                }
             }
-        });
-        
-        // Reset input
-        e.target.value = '';
+        } catch (error) {
+            console.error('Error during upload process:', error);
+            alert('Error uploading images: ' + error.message);
+        } finally {
+            setIsUploadingInspiration(false);
+            // Reset input
+            e.target.value = '';
+        }
     };
     
     if (!isOpen) return null;
@@ -329,6 +521,35 @@ const ItemDetailModal = ({ item, isOpen, onClose, onSave, priceRequested = false
                             <div style={{
                                 padding: '12px 16px',
                             }}>
+                            {/* Main Item Image */}
+                            {(item.imageUrl || item.image_url || item.primary_image_url) && (
+                                <div style={{ 
+                                    marginBottom: '16px', 
+                                    textAlign: 'center',
+                                    padding: '8px',
+                                    backgroundColor: '#f9f9f9',
+                                    borderRadius: '4px',
+                                    border: '1px solid #e0e0e0'
+                                }}>
+                                    <img 
+                                        src={item.imageUrl || item.image_url || item.primary_image_url} 
+                                        alt="Item main image"
+                                        style={{
+                                            maxWidth: '100%',
+                                            maxHeight: '200px',
+                                            width: 'auto',
+                                            height: 'auto',
+                                            borderRadius: '4px',
+                                            objectFit: 'contain',
+                                            border: '1px solid #ddd'
+                                        }}
+                                        onError={(e) => {
+                                            e.target.style.display = 'none';
+                                        }}
+                                    />
+                                </div>
+                            )}
+                            
                             {/* SECTION: Item Facts (Editable) */}
                             <div style={{ marginBottom: '16px' }}>
                                 <h3 style={{ 
@@ -628,7 +849,7 @@ const ItemDetailModal = ({ item, isOpen, onClose, onSave, priceRequested = false
                                 {inspiration.length > 0 ? (
                                     <div style={{ 
                                         width: '100%',
-                                        minHeight: inspiration.length === 1 ? '150px' : '100px',
+                                        minHeight: inspiration.length === 1 ? '100px' : '80px',
                                         backgroundColor: '#f0f0f0',
                                         border: '1px solid #e0e0e0',
                                         borderRadius: '4px',
@@ -646,21 +867,21 @@ const ItemDetailModal = ({ item, isOpen, onClose, onSave, priceRequested = false
                                                 containerStyle = {
                                                     position: 'relative',
                                                     width: '100%',
-                                                    height: '150px',
+                                                    height: '100px',
                                                     flex: '0 0 100%'
                                                 };
                                             } else if (imageCount === 2) {
                                                 containerStyle = {
                                                     position: 'relative',
                                                     width: 'calc(50% - 3px)',
-                                                    height: '100px',
+                                                    height: '80px',
                                                     flex: '0 0 calc(50% - 3px)'
                                                 };
                                             } else {
                                                 containerStyle = {
                                                     position: 'relative',
                                                     width: 'calc(33.333% - 4px)',
-                                                    height: '100px',
+                                                    height: '80px',
                                                     flex: '0 0 calc(33.333% - 4px)'
                                                 };
                                             }
@@ -736,24 +957,28 @@ const ItemDetailModal = ({ item, isOpen, onClose, onSave, priceRequested = false
                                     multiple
                                     onChange={handleInspirationFileChange}
                                     style={{ display: 'none' }}
+                                    disabled={isUploadingInspiration}
                                 />
                                 <button
                                     type="button"
                                     onClick={() => {
+                                        if (isUploadingInspiration) return;
                                         const input = document.getElementById('inspiration-file-input');
                                         if (input) input.click();
                                     }}
+                                    disabled={isUploadingInspiration}
                                     style={{
                                         marginTop: '8px',
                                         padding: '6px 12px',
-                                        backgroundColor: '#f0f0f0',
+                                        backgroundColor: isUploadingInspiration ? '#ccc' : '#f0f0f0',
                                         border: '1px solid #ddd',
                                         borderRadius: '4px',
-                                        cursor: 'pointer',
+                                        cursor: isUploadingInspiration ? 'not-allowed' : 'pointer',
                                         fontSize: '11px',
+                                        opacity: isUploadingInspiration ? 0.6 : 1,
                                     }}
                                 >
-                                    + Add Reference Image
+                                    {isUploadingInspiration ? '⏳ Uploading...' : '+ Add Reference Image'}
                                 </button>
                             </div>
                             
@@ -831,7 +1056,7 @@ const ItemDetailModal = ({ item, isOpen, onClose, onSave, priceRequested = false
                                         }}
                                     >
                                         Request Quote
-                                    </button>
+                                </button>
                                 </div>
                             </div>
                             
@@ -885,19 +1110,19 @@ const ItemDetailModal = ({ item, isOpen, onClose, onSave, priceRequested = false
                             </button>
                             <button
                                 onClick={handleSave}
-                                disabled={isSaving}
+                                disabled={isSaving || isUploadingInspiration}
                                 style={{
                                     padding: '6px 12px',
                                     backgroundColor: '#0073aa',
                                     color: '#fff',
                                     border: 'none',
                                     borderRadius: '4px',
-                                    cursor: isSaving ? 'not-allowed' : 'pointer',
+                                    cursor: (isSaving || isUploadingInspiration) ? 'not-allowed' : 'pointer',
                                     fontSize: '12px',
-                                    opacity: isSaving ? 0.6 : 1,
+                                    opacity: (isSaving || isUploadingInspiration) ? 0.6 : 1,
                                 }}
                             >
-                                {isSaving ? 'Saving...' : 'Save Item Facts'}
+                                {isUploadingInspiration ? 'Uploading images...' : (isSaving ? 'Saving...' : 'Save Item Facts')}
                             </button>
                         </div>
                     </motion.div>
