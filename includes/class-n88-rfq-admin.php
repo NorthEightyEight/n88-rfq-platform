@@ -5517,6 +5517,22 @@ class N88_RFQ_Admin {
         $is_supplier = $current_user && ( in_array( 'n88_supplier_admin', $current_user->roles, true ) || in_array( 'supplier_admin', $current_user->roles, true ) );
         $is_wireframe_admin = $current_user && isset( $current_user->user_email ) && strtolower( (string) $current_user->user_email ) === 'wireframestudioos@gmail.com';
         
+        $fp_slot_bootstrap_js = null;
+        if ( $is_real_board && isset( $board_id ) && (int) $board_id > 0 && class_exists( 'N88_Item_Unlock' ) && N88_Item_Unlock::items_unlock_columns_exist() ) {
+            $proj_gate = isset( $_GET['project_id'] ) ? absint( $_GET['project_id'] ) : 0;
+            $resolved_fp = N88_Item_Unlock::resolve_fp_project_for_new_item( (int) $user_id, (int) $board_id, $proj_gate );
+            $gate = N88_Item_Unlock::get_fp_slot_gate( $resolved_fp, (int) $user_id, (int) $board_id );
+            $fp_slot_bootstrap_js = array(
+                'free_cap' => isset( $gate['free_cap'] ) ? (int) $gate['free_cap'] : N88_Item_Unlock::FULL_PROCESS_FREE_CAP,
+                'granted_extra' => isset( $gate['granted_extra'] ) ? (int) $gate['granted_extra'] : 0,
+                'allowed_total' => isset( $gate['allowed_total'] ) ? (int) $gate['allowed_total'] : N88_Item_Unlock::FULL_PROCESS_FREE_CAP,
+                'current_db' => isset( $gate['current'] ) ? (int) $gate['current'] : 0,
+                'remaining_db' => isset( $gate['remaining'] ) ? (int) $gate['remaining'] : 999,
+                'fp_add_blocked_db' => isset( $gate['remaining'] ) && (int) $gate['remaining'] < 1,
+                'unlock_price_usd' => (int) N88_Item_Unlock::UNLOCK_PRICE_USD,
+            );
+        }
+
         // Localize script for board data (AJAX URL and nonce for item modal)
         wp_localize_script( 'n88-debounced-save', 'n88BoardData', array(
             'ajaxUrl' => admin_url( 'admin-ajax.php' ),
@@ -5530,6 +5546,8 @@ class N88_RFQ_Admin {
             // Same query args used when loading initial board items — keeps status refresh + batch scope aligned when URL omits project_id.
             'boardProjectId' => isset( $_GET['project_id'] ) ? absint( $_GET['project_id'] ) : 0,
             'boardRoomId' => isset( $_GET['room_id'] ) ? absint( $_GET['room_id'] ) : 0,
+            // FP slot gate snapshot (whole board): instant lock on Add Item without AJAX; React store updates recount on full-board view only.
+            'fp_slot_bootstrap' => $fp_slot_bootstrap_js,
         ) );
         ?>
         <style>
@@ -6205,10 +6223,11 @@ class N88_RFQ_Admin {
                 pointer-events: none;
             }
 
-            /* Add Project / Add Room / Invite modals - full cover so no white body shows */
+            /* Add Project / Add Room / Invite / FP slot pay — full-screen fixed overlays */
             #n88-add-project-modal-backdrop,
             #n88-add-room-modal-backdrop,
-            #n88-invite-team-member-modal-backdrop {
+            #n88-invite-team-member-modal-backdrop,
+            #n88-fp-slot-pay-modal-backdrop {
                 display: none;
                 position: fixed;
                 inset: 0;
@@ -6225,15 +6244,21 @@ class N88_RFQ_Admin {
             }
             #n88-add-project-modal-backdrop.n88-modal-open,
             #n88-add-room-modal-backdrop.n88-modal-open,
-            #n88-invite-team-member-modal-backdrop.n88-modal-open {
+            #n88-invite-team-member-modal-backdrop.n88-modal-open,
+            #n88-fp-slot-pay-modal-backdrop.n88-modal-open {
                 display: flex;
             }
             /* Modals above canvas: higher z-index; when moved to body they always show on top */
             body > #n88-add-item-modal-backdrop,
             body > #n88-add-project-modal-backdrop,
             body > #n88-add-room-modal-backdrop,
-            body > #n88-invite-team-member-modal-backdrop {
+            body > #n88-invite-team-member-modal-backdrop,
+            body > #n88-fp-slot-pay-modal-backdrop {
                 z-index: 10000002 !important;
+            }
+            /* Unlock / payment slot modal above Add Item when both are on body */
+            body > #n88-fp-slot-pay-modal-backdrop.n88-modal-open {
+                z-index: 10000004 !important;
             }
             .n88-board-modal-box {
                 background: #323232;
@@ -6289,6 +6314,8 @@ class N88_RFQ_Admin {
             .n88-board-modal-box .n88-result { margin-top: 10px; font-size: 13px; }
             .n88-board-modal-box .n88-result.success { color: #7cba7c; }
             .n88-board-modal-box .n88-result.error { color: #e88; }
+            .n88-btn-bracket.n88-fp-slot-locked { opacity: 0.55; cursor: pointer !important; position: relative; }
+            .n88-btn-bracket.n88-fp-slot-locked::after { content: ' (locked)'; font-size: 10px; margin-left: 6px; font-weight: 600; color: #ffb74d; }
         </style>
         
         <div class="wrap">
@@ -6656,17 +6683,36 @@ class N88_RFQ_Admin {
                     try { localStorage.setItem('n88_board_cta_mode_v1', entryModeFromUrl); } catch (e) {}
                 }
                 var ctaMode = '';
+                var ctaHasExplicitPreference = false;
+                try {
+                    if ((localStorage.getItem('n88_board_cta_mode_v1') || '').trim() !== '') ctaHasExplicitPreference = true;
+                } catch (eK) {}
                 try { ctaMode = (localStorage.getItem('n88_board_cta_mode_v1') || '').toLowerCase(); } catch (e) {}
+                if ((entryModeFromUrl === 'full_process' || entryModeFromUrl === 'production_only')) {
+                    ctaHasExplicitPreference = true;
+                }
+                if (ctaMode !== 'full_process' && ctaMode !== 'production_only') {
+                    try {
+                        var prefEm = (localStorage.getItem('n88_workflow_preferred_entry_mode') || '').toLowerCase();
+                        if (prefEm === 'full_process' || prefEm === 'production_only') {
+                            ctaMode = prefEm;
+                            ctaHasExplicitPreference = true;
+                        }
+                    } catch (ePref) {}
+                }
+                if (ctaHasExplicitPreference && ctaMode !== 'full_process' && ctaMode !== 'production_only') {
+                    ctaMode = 'full_process';
+                }
                 var fullProjectBtn = document.getElementById('n88-create-project-btn');
                 var trackingProjectBtn = document.getElementById('n88-create-project-tracking-btn');
                 var fullItemBtn = document.getElementById('n88-add-item-btn');
                 var trackingItemBtn = document.getElementById('n88-add-item-tracking-btn');
-                if (ctaMode === 'full_process') {
+                if (ctaHasExplicitPreference && ctaMode === 'full_process') {
                     if (trackingProjectBtn) trackingProjectBtn.style.display = 'none';
                     if (trackingItemBtn) trackingItemBtn.style.display = 'none';
                     if (fullProjectBtn) fullProjectBtn.style.display = '';
                     if (fullItemBtn) fullItemBtn.style.display = '';
-                } else if (ctaMode === 'production_only') {
+                } else if (ctaHasExplicitPreference && ctaMode === 'production_only') {
                     if (fullProjectBtn) fullProjectBtn.style.display = 'none';
                     if (fullItemBtn) fullItemBtn.style.display = 'none';
                     if (trackingProjectBtn) trackingProjectBtn.style.display = '';
@@ -7636,6 +7682,51 @@ class N88_RFQ_Admin {
                     </div>
                 </div>
             </div>
+
+            <!-- Full-process slot payment (beyond 2 free items per board) -->
+            <div id="n88-fp-slot-pay-modal-backdrop" class="n88-board-modal-backdrop" aria-hidden="true">
+                <div id="n88-fp-slot-pay-modal" class="n88-board-modal-box" role="dialog" aria-labelledby="n88-fp-slot-pay-title" aria-modal="true" style="max-width:520px;">
+                    <div class="n88-add-item-header">
+                        <h2 class="n88-add-item-title" id="n88-fp-slot-pay-title">Unlock another full-process item</h2>
+                        <button type="button" class="n88-add-item-close" id="n88-fp-slot-pay-close" aria-label="Close">x</button>
+                    </div>
+                    <div class="n88-add-item-body">
+                        <p id="n88-fp-slot-pay-intro" style="font-size:13px;line-height:1.55;color:#d3d3d3;margin:0 0 14px;">
+                            You already have <?php echo (int) N88_Item_Unlock::FULL_PROCESS_FREE_CAP; ?> free workspace items on this board (full workflow + production tracking count together). Each additional item requires <strong><?php echo (int) N88_Item_Unlock::UNLOCK_PRICE_USD; ?> USDT</strong> (paid slot). Choose how you paid, attach a screenshot or PDF confirmation, then submit for Wireframe approval. When approved, Add Item unlocks again.
+                        </p>
+                        <div id="n88-fp-slot-payment-tab" style="margin:0 0 14px;padding:12px 14px;border:1px solid #4c4c4c;border-radius:8px;background:linear-gradient(180deg,#2a2a2a 0%,#242424 100%);">
+                            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+                                <div style="font-size:12px;color:#bdbdbd;letter-spacing:.03em;text-transform:uppercase;">Payment Amount</div>
+                                <div style="font-size:22px;font-weight:700;color:#ffffff;line-height:1;">
+                                    $<?php echo (int) N88_Item_Unlock::UNLOCK_PRICE_USD; ?>
+                                </div>
+                            </div>
+                            <div style="margin-top:8px;font-size:11px;color:#9f9f9f;">Per additional workspace item slot (submit proof below for approval).</div>
+                        </div>
+                        <div id="n88-fp-slot-pending-banner" style="display:none;margin-bottom:12px;padding:10px;border:1px solid #555;border-radius:6px;background:#1a1510;color:#ffb74d;font-size:12px;"></div>
+                        <div class="n88-field">
+                            <label for="n88-fp-slot-payment-method">Payment method <span class="n88-required">*</span></label>
+                            <select id="n88-fp-slot-payment-method" style="width:100%;">
+                                <option value="">Select method</option>
+                                <option value="usdt_trc20">USDT (TRC20)</option>
+                                <option value="usdt_erc20">USDT (ERC20)</option>
+                                <option value="ach_wire">ACH / Wire</option>
+                                <option value="zelle">Zelle</option>
+                                <option value="card">Card / processor receipt</option>
+                                <option value="other">Other (describe in file name / notes)</option>
+                            </select>
+                        </div>
+                        <div class="n88-field">
+                            <label for="n88-fp-slot-proof-file">Payment confirmation (JPG, PNG, PDF) <span class="n88-required">*</span></label>
+                            <input type="file" id="n88-fp-slot-proof-file" accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,image/*,application/pdf">
+                        </div>
+                        <div id="n88-fp-slot-pay-result" class="n88-result" style="display:none;"></div>
+                    </div>
+                    <div class="n88-add-item-footer">
+                        <button type="button" id="n88-fp-slot-pay-submit" class="n88-btn-add-item">[ Submit for payment approval ]</button>
+                    </div>
+                </div>
+            </div>
             
             <script>
             (function() {
@@ -7658,6 +7749,250 @@ class N88_RFQ_Admin {
                 var topRoomSelect = document.getElementById('n88-production-top-room');
                 var topNewProjectBtn = document.getElementById('n88-production-top-new-project');
                 var topNewRoomBtn = document.getElementById('n88-production-top-new-room');
+                var fpPayBackdrop = document.getElementById('n88-fp-slot-pay-modal-backdrop');
+                if (fpPayBackdrop && fpPayBackdrop.parentNode && fpPayBackdrop.parentNode !== document.body) document.body.appendChild(fpPayBackdrop);
+                var fpPayModal = document.getElementById('n88-fp-slot-pay-modal');
+                var fpPayClose = document.getElementById('n88-fp-slot-pay-close');
+                var fpPaySubmit = document.getElementById('n88-fp-slot-pay-submit');
+                var fpPayResult = document.getElementById('n88-fp-slot-pay-result');
+                var fpPayFile = document.getElementById('n88-fp-slot-proof-file');
+                var fpPayMethod = document.getElementById('n88-fp-slot-payment-method');
+                var fpPendingBanner = document.getElementById('n88-fp-slot-pending-banner');
+
+                window.n88FpSlotCountFullProcessFromItems = function(items) {
+                    if (!Array.isArray(items)) return 0;
+                    var n = 0;
+                    for (var ii = 0; ii < items.length; ii++) {
+                        var it = items[ii];
+                        if (!it || typeof it !== 'object') continue;
+                        var em = String(it.entry_mode || (it.rfq_state && it.rfq_state.entry_mode) || (it.meta && it.meta.entry_mode) || '').toLowerCase();
+                        if (em === 'production_only') continue;
+                        n++;
+                    }
+                    return n;
+                };
+                /** All cards on board consume the same workspace slot pool (full + production tracking). */
+                window.n88FpSlotCountAllBoardItemsFromItems = function(items) {
+                    if (!Array.isArray(items)) return 0;
+                    return items.length;
+                };
+                window.n88FpSlotBoardViewFiltered = function() {
+                    var bd = window.n88BoardData || {};
+                    return (parseInt(bd.boardProjectId, 10) || 0) > 0 || (parseInt(bd.boardRoomId, 10) || 0) > 0;
+                };
+                window.n88FpSlotApplyLockedToAddButton = function(items) {
+                    var lockTargets = [];
+                    var b1 = document.getElementById('n88-add-item-btn') || document.getElementById('n88-add-item-full-btn');
+                    var b2 = document.getElementById('n88-add-item-tracking-btn');
+                    if (b1) lockTargets.push(b1);
+                    if (b2) lockTargets.push(b2);
+                    if (!lockTargets.length) return;
+                    var fp = window.n88BoardData && window.n88BoardData.fp_slot_bootstrap;
+                    if (!fp || typeof fp.free_cap === 'undefined') {
+                        lockTargets.forEach(function(lockedBtn) {
+                            lockedBtn.removeAttribute('data-n88-fp-locked');
+                            lockedBtn.classList.remove('n88-fp-slot-locked');
+                            lockedBtn.removeAttribute('title');
+                        });
+                        return;
+                    }
+                    var freeCap = parseInt(fp.free_cap, 10);
+                    if (isNaN(freeCap)) freeCap = 2;
+                    var granted = parseInt(fp.granted_extra, 10);
+                    if (isNaN(granted) || granted < 0) granted = 0;
+                    var allowed = parseInt(fp.allowed_total, 10);
+                    if (isNaN(allowed) || allowed < 1) allowed = freeCap + Math.max(0, granted);
+                    var countFp;
+                    if (!window.n88FpSlotBoardViewFiltered() && items != null && Array.isArray(items)) {
+                        countFp = typeof window.n88FpSlotCountAllBoardItemsFromItems === 'function'
+                            ? window.n88FpSlotCountAllBoardItemsFromItems(items)
+                            : items.length;
+                    } else {
+                        countFp = parseInt(fp.current_db, 10);
+                        if (isNaN(countFp)) countFp = 0;
+                    }
+                    var remain = Math.max(0, allowed - countFp);
+                    var blk = remain < 1;
+                    fp.current_db = countFp;
+                    fp.remaining_db = remain;
+                    fp.fp_add_blocked_db = blk;
+                    var pu = parseInt(fp.unlock_price_usd, 10);
+                    if (isNaN(pu) || pu < 1) pu = 149;
+                    lockTargets.forEach(function(lockedBtn) {
+                        if (blk) {
+                            lockedBtn.setAttribute('data-n88-fp-locked', '1');
+                            lockedBtn.classList.add('n88-fp-slot-locked');
+                            lockedBtn.setAttribute('title', 'Unlock with ' + pu + ' USDT slot — click to submit payment proof');
+                        } else {
+                            lockedBtn.removeAttribute('data-n88-fp-locked');
+                            lockedBtn.classList.remove('n88-fp-slot-locked');
+                            lockedBtn.removeAttribute('title');
+                        }
+                    });
+                };
+                try {
+                    var gx0 = window.N88StudioOS && window.N88StudioOS.useBoardStore && window.N88StudioOS.useBoardStore.getState;
+                    window.n88FpSlotApplyLockedToAddButton(gx0 ? gx0().items : null);
+                } catch (exApply0) {
+                    try { window.n88FpSlotApplyLockedToAddButton(null); } catch (exApply1) {}
+                }
+
+                function n88GetFpStatusProjectId() {
+                    try {
+                        var u = new URLSearchParams(window.location.search);
+                        var fromUrl = parseInt(u.get('project_id') || '0', 10) || 0;
+                        if (fromUrl) return fromUrl;
+                    } catch (e) {}
+                    var inlinePs = form ? form.querySelector('select[name="project_id"]') : null;
+                    if (inlinePs && inlinePs.value) return parseInt(inlinePs.value, 10) || 0;
+                    if (topProjectSelect && topProjectSelect.value) return parseInt(topProjectSelect.value, 10) || 0;
+                    return 0;
+                }
+
+                function n88FpAjaxUrl() {
+                    return (window.n88BoardData && window.n88BoardData.ajaxUrl) ? window.n88BoardData.ajaxUrl : '<?php echo esc_js( admin_url( 'admin-ajax.php' ) ); ?>';
+                }
+
+                window.n88RefreshFpSlotGate = function() {
+                    var boardEl = document.getElementById('n88-modal-item-board');
+                    var boardVal = boardEl ? parseInt(boardEl.value || '0', 10) || 0 : <?php echo (int) $add_item_modal_board_id; ?>;
+                    if (!boardVal || boardVal <= 0) return Promise.resolve(null);
+                    var nonce = (window.n88BoardNonce && window.n88BoardNonce.nonce) || '<?php echo esc_js( wp_create_nonce( 'n88-rfq-nonce' ) ); ?>';
+                    if (!nonce) return Promise.resolve(null);
+                    var fd = new FormData();
+                    fd.append('action', 'n88_fp_slot_status');
+                    fd.append('nonce', nonce);
+                    fd.append('board_id', String(boardVal));
+                    fd.append('project_id', String(n88GetFpStatusProjectId()));
+                    return fetch(n88FpAjaxUrl(), { method: 'POST', body: fd, credentials: 'same-origin' }).then(function(r) { return r.json(); }).then(function(data) {
+                        if (!data || !data.success || !data.data) return null;
+                        var dslot = data.data;
+                        window.n88LastFpSlotStatus = dslot;
+                        if (window.n88BoardData && window.n88BoardData.fp_slot_bootstrap) {
+                            var bsync = window.n88BoardData.fp_slot_bootstrap;
+                            if (typeof dslot.current !== 'undefined') bsync.current_db = parseInt(dslot.current, 10) || 0;
+                            if (typeof dslot.remaining !== 'undefined') bsync.remaining_db = parseInt(dslot.remaining, 10) || 0;
+                            if (typeof dslot.allowed_total !== 'undefined') bsync.allowed_total = parseInt(dslot.allowed_total, 10) || bsync.allowed_total;
+                            if (typeof dslot.granted_slots !== 'undefined') bsync.granted_extra = parseInt(dslot.granted_slots, 10) || 0;
+                            if (typeof dslot.free_cap !== 'undefined') bsync.free_cap = parseInt(dslot.free_cap, 10) || bsync.free_cap;
+                            if (typeof dslot.fp_add_blocked !== 'undefined') bsync.fp_add_blocked_db = !!dslot.fp_add_blocked;
+                            if (typeof dslot.unlock_price_usd !== 'undefined') bsync.unlock_price_usd = parseInt(dslot.unlock_price_usd, 10) || bsync.unlock_price_usd;
+                        }
+                        try {
+                            var gzs = window.N88StudioOS && window.N88StudioOS.useBoardStore && window.N88StudioOS.useBoardStore.getState;
+                            if (typeof window.n88FpSlotApplyLockedToAddButton === 'function') {
+                                window.n88FpSlotApplyLockedToAddButton(gzs ? gzs().items : null);
+                            }
+                        } catch (zMer) {}
+                        if (fpPendingBanner && dslot.pending_notice) {
+                            fpPendingBanner.style.display = 'block';
+                            fpPendingBanner.textContent = dslot.pending_notice;
+                        } else if (fpPendingBanner) {
+                            fpPendingBanner.style.display = 'none';
+                            fpPendingBanner.textContent = '';
+                        }
+                        return data.data;
+                    }).catch(function() { return null; });
+                };
+
+                function openFpSlotPayModal(prefaceMsg) {
+                    if (!fpPayBackdrop || !fpPayModal) return;
+                    if (fpPayResult) { fpPayResult.style.display = 'none'; fpPayResult.textContent = ''; fpPayResult.className = 'n88-result'; }
+                    if (fpPayMethod) fpPayMethod.value = '';
+                    if (fpPayFile) fpPayFile.value = '';
+                    if (fpPendingBanner && window.n88LastFpSlotStatus && window.n88LastFpSlotStatus.pending_notice) {
+                        fpPendingBanner.style.display = 'block';
+                        fpPendingBanner.textContent = window.n88LastFpSlotStatus.pending_notice;
+                    } else if (fpPendingBanner) {
+                        fpPendingBanner.style.display = 'none';
+                        fpPendingBanner.textContent = '';
+                    }
+                    fpPayBackdrop.classList.add('n88-modal-open');
+                    fpPayBackdrop.setAttribute('aria-hidden', 'false');
+                    document.body.classList.add('n88-modal-open');
+                    if (prefaceMsg && fpPayResult) {
+                        fpPayResult.style.display = 'block';
+                        fpPayResult.className = 'n88-result';
+                        fpPayResult.textContent = prefaceMsg;
+                    }
+                }
+
+                function closeFpSlotPayModal() {
+                    if (!fpPayBackdrop) return;
+                    fpPayBackdrop.classList.remove('n88-modal-open');
+                    fpPayBackdrop.setAttribute('aria-hidden', 'true');
+                    document.body.classList.remove('n88-modal-open');
+                }
+
+                if (fpPayClose) fpPayClose.addEventListener('click', closeFpSlotPayModal);
+                if (fpPayBackdrop) fpPayBackdrop.addEventListener('click', function(ev) {
+                    if (ev.target === fpPayBackdrop) closeFpSlotPayModal();
+                });
+                if (fpPayModal) fpPayModal.addEventListener('click', function(ev) { ev.stopPropagation(); });
+                if (fpPaySubmit) fpPaySubmit.addEventListener('click', function() {
+                    var nonce = (window.n88BoardNonce && window.n88BoardNonce.nonce) || '<?php echo esc_js( wp_create_nonce( 'n88-rfq-nonce' ) ); ?>';
+                    var boardEl = document.getElementById('n88-modal-item-board');
+                    var boardVal = boardEl ? parseInt(boardEl.value || '0', 10) || 0 : <?php echo (int) $add_item_modal_board_id; ?>;
+                    if (!nonce || boardVal <= 0) {
+                        alert('Board context or security token missing. Refresh and try again.');
+                        return;
+                    }
+                    var method = fpPayMethod ? String(fpPayMethod.value || '').trim() : '';
+                    if (!method) {
+                        alert('Choose a payment method.');
+                        return;
+                    }
+                    if (!fpPayFile || !fpPayFile.files || !fpPayFile.files[0]) {
+                        alert('Attach payment confirmation.');
+                        return;
+                    }
+                    var fd = new FormData();
+                    fd.append('action', 'n88_fp_slot_submit_request');
+                    fd.append('nonce', nonce);
+                    fd.append('board_id', String(boardVal));
+                    fd.append('project_id', String(n88GetFpStatusProjectId()));
+                    fd.append('payment_method', method);
+                    fd.append('proof_file', fpPayFile.files[0]);
+                    fpPaySubmit.disabled = true;
+                    fetch(n88FpAjaxUrl(), { method: 'POST', body: fd, credentials: 'same-origin' })
+                        .then(function(r) { return r.json(); })
+                        .then(function(res) {
+                            fpPaySubmit.disabled = false;
+                            if (res && res.success) {
+                                if (fpPayResult) {
+                                    fpPayResult.style.display = 'block';
+                                    fpPayResult.className = 'n88-result success';
+                                    fpPayResult.textContent = (res.data && res.data.message) ? res.data.message : 'Submitted for approval.';
+                                }
+                                window.n88RefreshFpSlotGate();
+                                setTimeout(function() { closeFpSlotPayModal(); }, 1800);
+                            } else {
+                                var msg = (res && res.data && res.data.message) ? res.data.message : 'Could not submit.';
+                                if (fpPayResult) {
+                                    fpPayResult.style.display = 'block';
+                                    fpPayResult.className = 'n88-result error';
+                                    fpPayResult.textContent = msg;
+                                } else {
+                                    alert(msg);
+                                }
+                            }
+                        })
+                        .catch(function() {
+                            fpPaySubmit.disabled = false;
+                            alert('Network error. Try again.');
+                        });
+                });
+
+                setTimeout(function() {
+                    if (typeof window.n88RefreshFpSlotGate === 'function') window.n88RefreshFpSlotGate();
+                }, 900);
+                setInterval(function() {
+                    if (typeof window.n88RefreshFpSlotGate === 'function') window.n88RefreshFpSlotGate();
+                }, 60000);
+                document.addEventListener('visibilitychange', function() {
+                    if (document.visibilityState === 'visible' && typeof window.n88RefreshFpSlotGate === 'function') window.n88RefreshFpSlotGate();
+                });
+
                 function populateCategorySelect(selectEl, selectedValue) {
                     if (!selectEl) return;
                     var currentValue = selectedValue !== undefined ? selectedValue : (selectEl.value || '');
@@ -7872,6 +8207,11 @@ class N88_RFQ_Admin {
                             applyMeasurementTypeToBlock(block, target.value);
                         } else if (target.name === 'measurement_type') {
                             applyMeasurementTypeToBlock(block, target.value);
+                        } else if (target.name === 'project_id' && typeof window.n88FpSlotApplyLockedToAddButton === 'function') {
+                            try {
+                                var gfs = window.N88StudioOS && window.N88StudioOS.useBoardStore && window.N88StudioOS.useBoardStore.getState;
+                                window.n88FpSlotApplyLockedToAddButton(gfs ? gfs().items : null);
+                            } catch (efpi) {}
                         }
                     });
                 }
@@ -7886,8 +8226,33 @@ class N88_RFQ_Admin {
                     resetAddItemModalState();
                 }
                 
-                if (addItemBtn) addItemBtn.addEventListener('click', function() { openAddItemModal('full_process'); });
-                if (addItemTrackingBtn) addItemTrackingBtn.addEventListener('click', function() { openAddItemModal('production_only'); });
+                if (addItemBtn) addItemBtn.addEventListener('click', function() {
+                    // Refresh lock flag from board items / bootstrap — no AJAX (no n88_fp_slot_status).
+                    try {
+                        var gst = window.N88StudioOS && window.N88StudioOS.useBoardStore && window.N88StudioOS.useBoardStore.getState;
+                        if (typeof window.n88FpSlotApplyLockedToAddButton === 'function') {
+                            window.n88FpSlotApplyLockedToAddButton(gst ? gst().items : null);
+                        }
+                    } catch (eFpClk) {}
+                    if (addItemBtn.getAttribute('data-n88-fp-locked') === '1') {
+                        openFpSlotPayModal('');
+                        return;
+                    }
+                    openAddItemModal('full_process');
+                });
+                if (addItemTrackingBtn) addItemTrackingBtn.addEventListener('click', function() {
+                    try {
+                        var gstTr = window.N88StudioOS && window.N88StudioOS.useBoardStore && window.N88StudioOS.useBoardStore.getState;
+                        if (typeof window.n88FpSlotApplyLockedToAddButton === 'function') {
+                            window.n88FpSlotApplyLockedToAddButton(gstTr ? gstTr().items : null);
+                        }
+                    } catch (eTr) {}
+                    if (addItemTrackingBtn.getAttribute('data-n88-fp-locked') === '1') {
+                        openFpSlotPayModal('');
+                        return;
+                    }
+                    openAddItemModal('production_only');
+                });
                 if (topNewProjectBtn) topNewProjectBtn.addEventListener('click', function() {
                     var btn = document.getElementById('n88-create-project-btn');
                     if (btn) btn.click();
@@ -8351,6 +8716,12 @@ class N88_RFQ_Admin {
                 if (topProjectSelect) {
                     topProjectSelect.addEventListener('change', function() {
                         loadTopRooms(topProjectSelect.value || '');
+                        try {
+                            var gtp = window.N88StudioOS && window.N88StudioOS.useBoardStore && window.N88StudioOS.useBoardStore.getState;
+                            if (typeof window.n88FpSlotApplyLockedToAddButton === 'function') {
+                                window.n88FpSlotApplyLockedToAddButton(gtp ? gtp().items : null);
+                            }
+                        } catch (etp) {}
                     });
                 }
                 
@@ -9628,6 +9999,9 @@ class N88_RFQ_Admin {
                                         if (submitRfqDirectBtn) submitRfqDirectBtn.innerHTML = defaultDirectText;
                                         resultEl.textContent = 'Error: ' + (res && res.data && res.data.message ? res.data.message : 'Unknown error');
                                         resultEl.className = 'n88-result error';
+                                        if (res && res.data && res.data.code === 'n88_fp_slot_required' && typeof openFpSlotPayModal === 'function') {
+                                            openFpSlotPayModal(res.data.message ? String(res.data.message) : '');
+                                        }
                                         updateDirectRfqButtonVisibility();
                                         return;
                                     }
@@ -9659,6 +10033,7 @@ class N88_RFQ_Admin {
                                         }
                                         resultEl.className = 'n88-result success';
                                     }
+                                    if (typeof window.n88RefreshFpSlotGate === 'function') window.n88RefreshFpSlotGate();
                                     if (shouldSubmitRfqAfterCreate) {
                                         submitCreatedItemsAsRfq(createdItemIds, submitRfqDirectBtn || submitBtn).then(function(data) {
                                             alert((data.data && data.data.message) || 'RFQ submitted successfully!');
@@ -10017,7 +10392,7 @@ class N88_RFQ_Admin {
 
                 // Reset modal to single block when opening (optional: remove to keep multiple blocks across opens)
                 var origOpenAddItemModal = openAddItemModal;
-                openAddItemModal = function() {
+                openAddItemModal = function(mode) {
                     if (blocksContainer) {
                         var blocks = blocksContainer.querySelectorAll('.n88-add-item-block');
                         for (var i = 1; i < blocks.length; i++) blocks[i].remove();
@@ -10051,7 +10426,7 @@ class N88_RFQ_Admin {
                         // Fail silently if URL parsing fails
                     }
 
-                    origOpenAddItemModal();
+                    origOpenAddItemModal(mode);
                 };
             })();
             </script>
@@ -11444,6 +11819,23 @@ class N88_RFQ_Admin {
                     // Real board - use items directly (no localStorage)
                     store.setItems(initialItems);
                 }
+
+                try {
+                    if (typeof window.n88FpSlotApplyLockedToAddButton === 'function') {
+                        window.n88FpSlotApplyLockedToAddButton(useBoardStore.getState().items);
+                    }
+                } catch (eFpSyncHydrate) {}
+
+                try {
+                    if (typeof useBoardStore.subscribe === 'function') {
+                        useBoardStore.subscribe(function(st) {
+                            if (typeof window.n88FpSlotApplyLockedToAddButton !== 'function') return;
+                            try {
+                                window.n88FpSlotApplyLockedToAddButton(st.items);
+                            } catch (eFpSub) {}
+                        });
+                    }
+                } catch (eFpSubInit) {}
 
                 // Locked size presets (DO NOT CHANGE)
                 const CARD_SIZES = {
@@ -26914,6 +27306,34 @@ class N88_RFQ_Admin {
                             rfq_state_fetched_at: modalPreloadedRfqState.rfq_state_fetched_at || Date.now()
                         })
                         : item;
+                    
+                    return React.createElement(React.Fragment, null,
+                        React.createElement(BoardItem, boardItemProps),
+                        React.createElement(ItemDetailModalInline, {
+                            key: 'item-detail-modal-' + String(item && (item.id || item.item_id || 'new')) + '-' + String(requestSampleContext && requestSampleContext.requestToken ? requestSampleContext.requestToken : 'default') + '-' + String(supportMediaContext && supportMediaContext.requestToken ? supportMediaContext.requestToken : 'support-default'),
+                            item: modalItem,
+                            isOpen: isModalOpen,
+                            openToDetailsAndSupport: openModalToSupport,
+                            onClose: function() {
+                                try { window.dispatchEvent(new CustomEvent('n88-board-refresh-status')); } catch (e) {}
+                                setOpenModalToSupport(false);
+                                setInitialTimelineStep(null);
+                                setRequestSampleContext(null);
+                                setSupportMediaContext(null);
+                                setModalPreloadedRfqState(null);
+                                setModalPreloadedTimelineData(null);
+                                setIsModalOpen(false);
+                            },
+                            onSave: handleSave,
+                            boardId: boardId,
+                            initialTab: initialTab,
+                            initialTimelineStep: initialTimelineStep,
+                            requestSampleContext: requestSampleContext,
+                            supportMediaContext: supportMediaContext,
+                            preloadedTimelineData: modalPreloadedTimelineData,
+                            hidePerItemMarkSamplesReceived: !!batchActionDetailModalOpen
+                        })
+                    );
                 };
 
                 // UnsyncedToast Component
@@ -26960,6 +27380,53 @@ class N88_RFQ_Admin {
                     }, 'x')));
                 };
 
+                // ConciergeOverlay Component (inline)
+                const ConciergeOverlay = function({ concierge }) {
+                    var conciergeData = concierge || { name: 'Message System Operator', avatarUrl: '' };
+                    return React.createElement('div', {
+                        style: {
+                            position: 'absolute',
+                            top: '20px',
+                            left: '20px',
+                            zIndex: 10000,
+                            pointerEvents: 'none',
+                        },
+                    }, React.createElement('div', {
+                        style: {
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '12px',
+                            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                            padding: '12px 16px',
+                            borderRadius: '8px',
+                            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+                            border: '1px solid rgba(0, 0, 0, 0.1)',
+                        },
+                    }, React.createElement('div', {
+                        style: {
+                            width: '40px',
+                            height: '40px',
+                            borderRadius: '50%',
+                            backgroundColor: conciergeData.avatarUrl ? 'transparent' : '#0073aa',
+                            backgroundImage: conciergeData.avatarUrl ? 'url(' + conciergeData.avatarUrl + ')' : 'none',
+                            backgroundSize: 'cover',
+                            backgroundPosition: 'center',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: '#fff',
+                            fontSize: '18px',
+                            fontWeight: 'bold',
+                            flexShrink: 0,
+                        },
+                    }, !conciergeData.avatarUrl && React.createElement('span', { 'aria-hidden': 'true' }, '\uD83C\uDFA7')), React.createElement('div', {
+                        style: {
+                            fontSize: '14px',
+                            fontWeight: '600',
+                            color: '#333',
+                        },
+                    }, conciergeData.name)));
+                };
 
                 // WelcomeModal Component (inline)
                 const WelcomeModal = function({ userId, onClose }) {

@@ -1230,6 +1230,11 @@ class N88_RFQ_Installer {
         // Commit 3.D.8B: Item unlock columns + project FP counter (stored entitlement)
         self::migrate_commit_3_d_8_b_item_unlock();
 
+        // Commit 3.D.8C: Paid full-process slot payment proof queue (operator approval)
+        if ( class_exists( 'N88_FP_Slot_Requests' ) ) {
+            N88_FP_Slot_Requests::install_tables();
+        }
+
         // Commit 3.A.1: Item Timeline Spine (immutable 6-step per item)
         self::create_phase_3_a_1_item_timeline_tables( $charset_collate );
 

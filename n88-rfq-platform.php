@@ -77,7 +77,8 @@ $includes = array(
     'includes/class-n88-timeline-step-videos.php', // Commit 3.B.5.A1: Step 4–6 video evidence + designer step comments
     'includes/class-n88-authorization.php',
     'includes/class-n88-intelligence.php',
-    'includes/class-n88-item-unlock.php', // Commit 3.D.8B: full-process unlock flags (2 free / $149 additional)
+    'includes/class-n88-item-unlock.php', // Commit 3.D.8B/C: full-process unlock + paid slot requests
+    'includes/class-n88-fp-slot-requests.php', // Commit 3.D.8C: operator-approved extra FP slots
     'includes/class-n88-items.php',
     'includes/class-n88-boards.php',
     'includes/class-n88-board-layout.php',
@@ -117,6 +118,8 @@ function n88_rfq_bootstrap() {
     // Phase 1.2.3: Material Bank
     new N88_Materials();
     new N88_Item_Materials();
+    // Commit 3.D.8C: registers wp_ajax_n88_fp_slot_* (status, submit, operator list, etc.)
+    new N88_FP_Slot_Requests();
 }
     add_action( 'plugins_loaded', 'n88_rfq_bootstrap', 5 );
 }

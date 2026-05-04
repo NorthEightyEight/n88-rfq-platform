@@ -5485,6 +5485,37 @@ class N88_RFQ_Auth {
                 <?php echo $this->render_supplier_media_library_manager( $current_user->ID, 'queue' ); ?>
             </div>
             <?php endif; ?>
+
+            <?php if ( $is_wireframe_supplier_queue || $is_system_operator ) : ?>
+            <div class="n88-supplier-queue-section" id="n88-fp-slot-approvals-wrap">
+                <h2 class="n88-supplier-queue-section-title"><?php esc_html_e( 'Paid full-process slot approvals', 'n88-rfq-platform' ); ?></h2>
+                <p class="n88-supplier-queue-items-desc"><?php
+                    $fp_cap_w = class_exists( 'N88_Item_Unlock' ) ? (int) N88_Item_Unlock::FULL_PROCESS_FREE_CAP : 2;
+                    $fp_usd_w = class_exists( 'N88_Item_Unlock' ) ? (int) N88_Item_Unlock::UNLOCK_PRICE_USD : 149;
+                    echo esc_html( "Designers hit the {$fp_cap_w} free full-process items cap per board. Review payment proof and approve to grant one more slot ({$fp_usd_w} USDT)." );
+                    ?></p>
+                <div style="margin:12px 0;">
+                    <button type="button" id="n88-fp-slot-queue-refresh" class="n88-supplier-queue-action-btn"><?php esc_html_e( '[ Refresh approvals ]', 'n88-rfq-platform' ); ?></button>
+                </div>
+                <div style="overflow-x:auto;">
+                    <table class="n88-supplier-queue-table" style="width:100%;">
+                        <thead>
+                            <tr>
+                                <th><?php esc_html_e( 'ID', 'n88-rfq-platform' ); ?></th>
+                                <th><?php esc_html_e( 'Designer', 'n88-rfq-platform' ); ?></th>
+                                <th><?php esc_html_e( 'Board', 'n88-rfq-platform' ); ?></th>
+                                <th><?php esc_html_e( 'Method', 'n88-rfq-platform' ); ?></th>
+                                <th><?php esc_html_e( 'Proof', 'n88-rfq-platform' ); ?></th>
+                                <th><?php esc_html_e( 'Actions', 'n88-rfq-platform' ); ?></th>
+                            </tr>
+                        </thead>
+                        <tbody id="n88-fp-slot-queue-body">
+                            <tr><td colspan="6" class="n88-supplier-queue-empty"><?php esc_html_e( 'Loading…', 'n88-rfq-platform' ); ?></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <?php endif; ?>
              
             <!-- Filters Section -->
             <div class="n88-supplier-queue-section">
@@ -9125,6 +9156,141 @@ class N88_RFQ_Auth {
                     mediaLibraryClose.addEventListener('click', function() {
                         mediaLibraryPanel.style.display = 'none';
                     });
+                }
+
+                var fpQueueWrap = document.getElementById('n88-fp-slot-approvals-wrap');
+                if (fpQueueWrap) {
+                    var fpQueueBody = document.getElementById('n88-fp-slot-queue-body');
+                    var fpQueueRefresh = document.getElementById('n88-fp-slot-queue-refresh');
+                    var fpQueueNonce = '<?php echo esc_js( wp_create_nonce( 'n88-rfq-nonce' ) ); ?>';
+                    var fpQueueAjax = '<?php echo esc_js( admin_url( 'admin-ajax.php' ) ); ?>';
+                    var fpQueueLoadInFlight = false;
+
+                    function n88FpQueueStartFetchingDots(btnEl, loadingLabel) {
+                        if (!btnEl) return function() {};
+                        var originalText = btnEl.textContent;
+                        var dots = 0;
+                        var base = loadingLabel || 'Fetching';
+                        btnEl.disabled = true;
+                        btnEl.textContent = base + '.';
+                        var tick = setInterval(function() {
+                            dots = (dots + 1) % 4;
+                            btnEl.textContent = base + (dots ? new Array(dots + 1).join('.') : '');
+                        }, 350);
+                        return function() {
+                            clearInterval(tick);
+                            btnEl.disabled = false;
+                            btnEl.textContent = originalText;
+                        };
+                    }
+
+                    function n88FpQueueRender(rows) {
+                        if (!fpQueueBody) return;
+                        fpQueueBody.innerHTML = '';
+                        if (!rows || !rows.length) {
+                            var tr0 = document.createElement('tr');
+                            var td0 = document.createElement('td');
+                            td0.colSpan = 6;
+                            td0.className = 'n88-supplier-queue-empty';
+                            td0.textContent = 'No pending requests.';
+                            tr0.appendChild(td0);
+                            fpQueueBody.appendChild(tr0);
+                            return;
+                        }
+                        rows.forEach(function(row) {
+                            var tr = document.createElement('tr');
+                            function td(html, isHtml) {
+                                var cell = document.createElement('td');
+                                if (isHtml) cell.innerHTML = html;
+                                else cell.textContent = html || '';
+                                tr.appendChild(cell);
+                            }
+                            td(String(row.id || ''));
+                            td(row.designer_display || '');
+                            td(String(row.board_id || ''));
+                            td(row.payment_method || '');
+                            var proof = row.proof_url ? '<a href="' + String(row.proof_url).replace(/"/g, '&quot;') + '" target="_blank" rel="noopener">View</a>' : '';
+                            td(proof, true);
+                            var act = document.createElement('td');
+                            var appr = document.createElement('button');
+                            appr.type = 'button';
+                            appr.className = 'n88-supplier-queue-action-btn';
+                            appr.textContent = '[ Approve ]';
+                            appr.style.marginRight = '8px';
+                            appr.onclick = function() { n88FpQueueDecide(row.id, 'approve', appr); };
+                            var rej = document.createElement('button');
+                            rej.type = 'button';
+                            rej.className = 'n88-supplier-queue-action-btn';
+                            rej.textContent = '[ Reject ]';
+                            rej.onclick = function() { n88FpQueueDecide(row.id, 'reject', rej); };
+                            act.appendChild(appr);
+                            act.appendChild(rej);
+                            tr.appendChild(act);
+                            fpQueueBody.appendChild(tr);
+                        });
+                    }
+
+                    function n88FpQueueLoad() {
+                        if (fpQueueLoadInFlight) return;
+                        fpQueueLoadInFlight = true;
+                        var stopRefreshAnim = n88FpQueueStartFetchingDots(fpQueueRefresh, 'Fetching');
+                        var fd = new FormData();
+                        fd.append('action', 'n88_fp_slot_operator_list');
+                        fd.append('nonce', fpQueueNonce);
+                        fetch(fpQueueAjax, { method: 'POST', body: fd, credentials: 'same-origin' })
+                            .then(function(r) { return r.json(); })
+                            .then(function(data) {
+                                fpQueueLoadInFlight = false;
+                                stopRefreshAnim();
+                                if (!data || !data.success || !data.data || !Array.isArray(data.data.rows)) {
+                                    n88FpQueueRender([]);
+                                    return;
+                                }
+                                n88FpQueueRender(data.data.rows);
+                            })
+                            .catch(function() {
+                                fpQueueLoadInFlight = false;
+                                stopRefreshAnim();
+                                if (fpQueueBody) {
+                                    fpQueueBody.innerHTML = '';
+                                    var tr = document.createElement('tr');
+                                    var td = document.createElement('td');
+                                    td.colSpan = 6;
+                                    td.className = 'n88-supplier-queue-empty';
+                                    td.textContent = 'Could not load approvals.';
+                                    tr.appendChild(td);
+                                    fpQueueBody.appendChild(tr);
+                                }
+                            });
+                    }
+
+                    function n88FpQueueDecide(requestId, decision, btnEl) {
+                        if (!requestId || !decision) return;
+                        if (!confirm(decision === 'approve' ? 'Approve this payment and grant one slot?' : 'Reject this request?')) return;
+                        var fd = new FormData();
+                        fd.append('action', 'n88_fp_slot_operator_decide');
+                        fd.append('nonce', fpQueueNonce);
+                        fd.append('request_id', String(requestId));
+                        fd.append('decision', decision);
+                        var stopApproveAnim = n88FpQueueStartFetchingDots(btnEl, 'Fetching');
+                        fetch(fpQueueAjax, { method: 'POST', body: fd, credentials: 'same-origin' })
+                            .then(function(r) { return r.json(); })
+                            .then(function(data) {
+                                stopApproveAnim();
+                                if (data && data.success) {
+                                    n88FpQueueLoad();
+                                } else {
+                                    alert((data && data.data && data.data.message) ? data.data.message : 'Action failed.');
+                                }
+                            })
+                            .catch(function() {
+                                stopApproveAnim();
+                                alert('Network error.');
+                            });
+                    }
+
+                    if (fpQueueRefresh) fpQueueRefresh.addEventListener('click', n88FpQueueLoad);
+                    n88FpQueueLoad();
                 }
                 
                 // Commit 2.3.9.1C-a: Attach event listeners to Operator-Supplier Messages (clarification) buttons
@@ -19047,6 +19213,7 @@ class N88_RFQ_Auth {
 
             function redirectToBoard(mode, boardId) {
                 try { localStorage.setItem('n88_workflow_preferred_entry_mode', mode); } catch (e) {}
+                try { localStorage.setItem('n88_board_cta_mode_v1', mode); } catch (e2) {}
                 var url = '<?php echo esc_js( admin_url( 'admin.php?page=n88-rfq-board-demo' ) ); ?>';
                 var params = new URLSearchParams();
                 params.set('n88_entry_mode', mode);

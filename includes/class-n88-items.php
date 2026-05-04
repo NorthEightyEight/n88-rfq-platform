@@ -224,6 +224,9 @@ class N88_Items {
         $board_item_links = array();
         $board_access_cache = array();
 
+        /** @var array<string,int> Tracks remaining FP create budget within this transaction (multi-item batch). */
+        $fp_budget_remaining = array();
+
         // Create profile once per batch instead of per item.
         $this->ensure_designer_profile( $user_id );
 
@@ -408,6 +411,35 @@ class N88_Items {
                 $resolved_row_project = $fp_counter_project;
             }
 
+            if ( class_exists( 'N88_Item_Unlock' ) && N88_Item_Unlock::items_unlock_columns_exist() ) {
+                $bid = absint( $board_id );
+                if ( $bid > 0 && ( 'full_process' === $entry_mode || 'production_only' === $entry_mode ) ) {
+                    $budget_key = 'b:' . $bid;
+                    if ( ! isset( $fp_budget_remaining[ $budget_key ] ) ) {
+                        $g_tmp                              = N88_Item_Unlock::get_fp_slot_gate( $fp_counter_project, $user_id, $board_id );
+                        $fp_budget_remaining[ $budget_key ] = (int) max( 0, (int) $g_tmp['remaining'] );
+                    }
+                    if ( $fp_budget_remaining[ $budget_key ] < 1 ) {
+                        throw new Exception( 'Item ' . ( $idx + 1 ) . ': Workspace item slot limit reached. Submit payment proof for this board to unlock another item.' );
+                    }
+                    --$fp_budget_remaining[ $budget_key ];
+                } elseif ( 'full_process' === $entry_mode ) {
+                    if ( $fp_counter_project > 0 ) {
+                        $budget_key = 'p:' . absint( $fp_counter_project );
+                    } else {
+                        $budget_key = 'u:' . absint( $user_id );
+                    }
+                    if ( ! isset( $fp_budget_remaining[ $budget_key ] ) ) {
+                        $g_tmp                                = N88_Item_Unlock::get_fp_slot_gate( $fp_counter_project, $user_id, $board_id );
+                        $fp_budget_remaining[ $budget_key ] = (int) max( 0, (int) $g_tmp['remaining'] );
+                    }
+                    if ( $fp_budget_remaining[ $budget_key ] < 1 ) {
+                        throw new Exception( 'Item ' . ( $idx + 1 ) . ': Full-process slot limit reached. Submit payment proof for this board to unlock another item.' );
+                    }
+                    --$fp_budget_remaining[ $budget_key ];
+                }
+            }
+
             if ( $has_project_id && $resolved_row_project > 0 ) {
                 $insert_data['project_id'] = $resolved_row_project;
                 $insert_format[] = '%d';
@@ -426,7 +458,7 @@ class N88_Items {
             }
 
             if ( class_exists( 'N88_Item_Unlock' ) && N88_Item_Unlock::items_unlock_columns_exist() ) {
-                $uf                       = N88_Item_Unlock::flags_for_new_item( $entry_mode, $fp_counter_project, $user_id );
+                $uf                       = N88_Item_Unlock::flags_for_new_item( $entry_mode, $fp_counter_project, $user_id, $board_id );
                 $insert_data['is_free']   = $uf['is_free'];
                 $insert_data['is_paid']   = $uf['is_paid'];
                 $insert_data['is_locked'] = $uf['is_locked'];
@@ -944,7 +976,31 @@ class N88_Items {
             $fp_counter_project = N88_Item_Unlock::resolve_fp_project_for_new_item( $user_id, $board_id_req, $project_id_req );
             $row_project_id     = $fp_counter_project;
         }
-        
+
+        if ( class_exists( 'N88_Item_Unlock' ) && N88_Item_Unlock::items_unlock_columns_exist() ) {
+            if ( absint( $board_id_req ) > 0 && ( 'full_process' === $entry_mode || 'production_only' === $entry_mode ) ) {
+                if ( ! N88_Item_Unlock::full_process_slot_available( $fp_counter_project, $user_id, $board_id_req ) ) {
+                    wp_send_json_error(
+                        array(
+                            'message' => 'Workspace item slots for this board are used. Submit payment proof from [ + Add Item ] to request another slot.',
+                            'code' => 'n88_fp_slot_required',
+                        ),
+                        403
+                    );
+                }
+            } elseif ( 'full_process' === $entry_mode ) {
+                if ( ! N88_Item_Unlock::full_process_slot_available( $fp_counter_project, $user_id, $board_id_req ) ) {
+                    wp_send_json_error(
+                        array(
+                            'message' => 'Full-process slots for this project are used. Submit payment proof from [ + Add Item (Full) ] to request another slot.',
+                            'code' => 'n88_fp_slot_required',
+                        ),
+                        403
+                    );
+                }
+            }
+        }
+
         // Insert item
         $insert_data = array(
             'owner_user_id' => $user_id,
@@ -985,7 +1041,7 @@ class N88_Items {
         }
 
         if ( class_exists( 'N88_Item_Unlock' ) && N88_Item_Unlock::items_unlock_columns_exist() ) {
-            $uf                       = N88_Item_Unlock::flags_for_new_item( $entry_mode, $fp_counter_project, $user_id );
+            $uf                       = N88_Item_Unlock::flags_for_new_item( $entry_mode, $fp_counter_project, $user_id, $board_id_req );
             $insert_data['is_free']   = $uf['is_free'];
             $insert_data['is_paid']   = $uf['is_paid'];
             $insert_data['is_locked'] = $uf['is_locked'];
@@ -2384,6 +2440,37 @@ class N88_Items {
                     'board_id' => $board_id > 0 ? $board_id : null,
                 ) );
             }
+            if ( is_array( $old_inspiration ) && isset( $meta['inspiration'] ) && is_array( $meta['inspiration'] ) ) {
+                foreach ( $meta['inspiration'] as $new_insp ) {
+                    $new_id = isset( $new_insp['id'] ) && (int) $new_insp['id'] > 0 ? (int) $new_insp['id'] : null;
+                    $new_url = isset( $new_insp['url'] ) ? trim( (string) $new_insp['url'] ) : '';
+                    $new_caption = isset( $new_insp['caption'] ) && is_string( $new_insp['caption'] ) ? $new_insp['caption'] : '';
+                    $old_caption = '';
+                    foreach ( $old_inspiration as $old_insp ) {
+                        $match = false;
+                        if ( $new_id && isset( $old_insp['id'] ) && (int) $old_insp['id'] === $new_id ) {
+                            $match = true;
+                        } elseif ( $new_url && isset( $old_insp['url'] ) && trim( (string) $old_insp['url'] ) === $new_url ) {
+                            $match = true;
+                        }
+                        if ( $match ) {
+                            $old_caption = isset( $old_insp['caption'] ) && is_string( $old_insp['caption'] ) ? $old_insp['caption'] : '';
+                            break;
+                        }
+                    }
+                    if ( $old_caption !== $new_caption && ( $new_id || $new_url ) ) {
+                        n88_log_event( 'file_caption_updated', 'item', array(
+                            'object_id' => $item_id,
+                            'item_id' => $item_id,
+                            'file_id' => $new_id,
+                            'old_caption' => $old_caption,
+                            'new_caption' => $new_caption,
+                            'actor_id' => $current_user_id,
+                            'timestamp' => $event_ts,
+                        ) );
+                    }
+                }
+            }
         }
         
         // Quantity (Commit: State B save fix) - ALWAYS save if key exists and value is valid
@@ -2431,7 +2518,21 @@ class N88_Items {
                 $old_unit = isset( $old_dims['unit'] ) ? $old_dims['unit'] : null;
                 $new_unit = is_array( $new_dims ) && isset( $new_dims['unit'] ) ? $new_dims['unit'] : null;
                 
-               
+                if ( wp_json_encode( $old_dims ) !== wp_json_encode( $new_dims ) ) {
+                    $changed_fields[] = 'dims';
+                    $new_values['dims'] = $new_dims;
+                    
+                    // Also track dimension_unit separately if unit changed
+                    if ( $old_unit !== $new_unit ) {
+                        if ( ! in_array( 'dimension_unit', $changed_fields, true ) ) {
+                            $changed_fields[] = 'dimension_unit';
+                        }
+                        $new_values['dimension_unit'] = $new_unit;
+                        if ( ! isset( $old_values['dimension_unit'] ) ) {
+                            $old_values['dimension_unit'] = $old_unit;
+                        }
+                    }
+                }
             }
             if ( array_key_exists( 'measurement_type', $payload ) ) {
                 $old_measurement_type = isset( $old_values['measurement_type'] ) ? $old_values['measurement_type'] : '';
