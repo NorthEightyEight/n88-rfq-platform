@@ -36144,26 +36144,6 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
             wp_send_json_error( array( 'message' => 'Access denied or payment not found.' ) );
             return;
         }
-        if ( array_key_exists( 'selected_keyword_ids', $payload ) ) {
-            $selected_keyword_ids = is_array( $payload['selected_keyword_ids'] ) ? $payload['selected_keyword_ids'] : array();
-            $meta['selected_keyword_ids'] = array_values( array_unique( array_filter( array_map( 'absint', $selected_keyword_ids ) ) ) );
-        }
-        
-        if ( isset( $payload['dims_cm'] ) ) {
-            $meta['dims_cm'] = $payload['dims_cm'];
-        }
-        
-        if ( isset( $payload['cbm'] ) ) {
-            $meta['cbm'] = floatval( $payload['cbm'] );
-        }
-        
-        if ( isset( $payload['sourcing_type'] ) ) {
-            $meta['sourcing_type'] = sanitize_text_field( $payload['sourcing_type'] );
-        }
-        
-        if ( isset( $payload['timeline_type'] ) ) {
-            $meta['timeline_type'] = sanitize_text_field( $payload['timeline_type'] );
-        }
         
         
         $award_timestamp = current_time( 'mysql' );
