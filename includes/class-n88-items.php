@@ -2227,72 +2227,7 @@ class N88_Items {
         if ( array_key_exists( 'custom_specification', $payload ) ) {
             $meta['custom_specification'] = sanitize_textarea_field( (string) $payload['custom_specification'] );
         }
-        if ( array_key_exists( 'selected_keyword_ids', $payload ) ) {
-            $selected_keyword_ids = is_array( $payload['selected_keyword_ids'] ) ? $payload['selected_keyword_ids'] : array();
-            $meta['selected_keyword_ids'] = array_values( array_unique( array_filter( array_map( 'absint', $selected_keyword_ids ) ) ) );
-        }
-        
-        if ( isset( $payload['dims_cm'] ) ) {
-            $meta['dims_cm'] = $payload['dims_cm'];
-        }
-        
-        if ( isset( $payload['cbm'] ) ) {
-            $meta['cbm'] = floatval( $payload['cbm'] );
-        }
-        
-        if ( isset( $payload['sourcing_type'] ) ) {
-            $meta['sourcing_type'] = sanitize_text_field( $payload['sourcing_type'] );
-        }
-        
-        if ( isset( $payload['timeline_type'] ) ) {
-            $meta['timeline_type'] = sanitize_text_field( $payload['timeline_type'] );
-        }
-        
-        if ( isset( $payload['inspiration'] ) ) {
-            // Validate and sanitize inspiration array
-            $inspiration = $payload['inspiration'];
-            if ( is_array( $inspiration ) ) {
-                $valid_inspiration = array();
-                foreach ( $inspiration as $insp_item ) {
-                    // Only save items with valid structure - must have either a valid ID or a valid HTTP URL
-                    if ( ! is_array( $insp_item ) ) {
-                        continue;
-                    }
-                    
-                    // Check for valid ID (must be numeric and > 0)
-                    // Note: isset() returns false for null, so we need to check array_key_exists or use null coalescing
-                    $id_value = isset( $insp_item['id'] ) ? $insp_item['id'] : null;
-                    $has_valid_id = $id_value !== null && 
-                                    $id_value !== '' &&
-                                    is_numeric( $id_value ) && 
-                                    intval( $id_value ) > 0;
-                    
-                    // Check for valid URL (must be non-empty and start with http/https)
-                    $url = isset( $insp_item['url'] ) ? trim( $insp_item['url'] ) : '';
-                    $has_valid_url = ! empty( $url ) && 
-                                    $url !== '' &&
-                                    ( strpos( $url, 'http://' ) === 0 || strpos( $url, 'https://' ) === 0 );
-                    
-                    // Only save if it has either a valid ID or a valid URL
-                    if ( $has_valid_id || $has_valid_url ) {
-                        $valid_inspiration[] = array(
-                            'type' => isset( $insp_item['type'] ) ? sanitize_text_field( $insp_item['type'] ) : 'image',
-                            'id' => $has_valid_id ? intval( $id_value ) : null,
-                            'url' => $has_valid_url ? esc_url_raw( $url ) : '',
-                            'title' => isset( $insp_item['title'] ) ? sanitize_text_field( $insp_item['title'] ) : '',
-                            'caption' => isset( $insp_item['caption'] ) && is_string( $insp_item['caption'] ) ? substr( sanitize_text_field( $insp_item['caption'] ), 0, 100 ) : '',
-                        );
-                    } else {
-                        error_log( 'Item Facts Save - Skipping invalid inspiration item for item ' . $item_id . ': ' . wp_json_encode( $insp_item ) );
-                    }
-                }
-                $meta['inspiration'] = $valid_inspiration;
-                error_log( 'Item Facts Save - Saved ' . count( $valid_inspiration ) . ' inspiration images for item ' . $item_id . ': ' . wp_json_encode( $valid_inspiration ) );
-            } else {
-                error_log( 'Item Facts Save - Inspiration is not an array for item ' . $item_id );
-                $meta['inspiration'] = array();
-            }
-        }
+      
         
         // Smart Alternatives (Commit: Designer Item Modal)
         if ( isset( $payload['smart_alternatives'] ) ) {

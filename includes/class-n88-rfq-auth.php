@@ -36128,11 +36128,7 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
         $item_id = isset( $_POST['item_id'] ) ? absint( $_POST['item_id'] ) : 0;
         $bid_id = isset( $_POST['bid_id'] ) ? absint( $_POST['bid_id'] ) : 0;
         $version = isset( $_POST['version'] ) ? absint( $_POST['version'] ) : 0;
-        
-        if ( ! $payment_id || ! $item_id || ! $bid_id || ! $version ) {
-            wp_send_json_error( array( 'message' => 'Invalid parameters.' ) );
-            return;
-        }
+    
         
         global $wpdb;
         $prototype_payments_table = $wpdb->prefix . 'n88_prototype_payments';
@@ -36148,6 +36144,27 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
             wp_send_json_error( array( 'message' => 'Access denied or payment not found.' ) );
             return;
         }
+        if ( array_key_exists( 'selected_keyword_ids', $payload ) ) {
+            $selected_keyword_ids = is_array( $payload['selected_keyword_ids'] ) ? $payload['selected_keyword_ids'] : array();
+            $meta['selected_keyword_ids'] = array_values( array_unique( array_filter( array_map( 'absint', $selected_keyword_ids ) ) ) );
+        }
+        
+        if ( isset( $payload['dims_cm'] ) ) {
+            $meta['dims_cm'] = $payload['dims_cm'];
+        }
+        
+        if ( isset( $payload['cbm'] ) ) {
+            $meta['cbm'] = floatval( $payload['cbm'] );
+        }
+        
+        if ( isset( $payload['sourcing_type'] ) ) {
+            $meta['sourcing_type'] = sanitize_text_field( $payload['sourcing_type'] );
+        }
+        
+        if ( isset( $payload['timeline_type'] ) ) {
+            $meta['timeline_type'] = sanitize_text_field( $payload['timeline_type'] );
+        }
+        
         
         $award_timestamp = current_time( 'mysql' );
         $prototype_approved_at = $award_timestamp;
@@ -36166,25 +36183,7 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
             array( '%d' )
         );
         
-        // Log events (Commit 3.B.5B: prototype_approved)
-        if ( function_exists( 'n88_log_event' ) ) {
-            $payload = array(
-                'payment_id' => $payment_id,
-                'item_id' => $item_id,
-                'bid_id' => $bid_id,
-                'designer_id' => $current_user->ID,
-                'approved_version' => $version,
-                'awarded_supplier_id' => isset( $payment['supplier_id'] ) ? intval( $payment['supplier_id'] ) : null,
-                'award_timestamp' => $award_timestamp,
-                'prototype_approved_at' => $prototype_approved_at,
-                'timestamp' => current_time( 'mysql' ),
-            );
-            n88_log_event( 'prototype_approved', 'prototype_payment', array(
-                'object_id' => $payment_id,
-                'item_id' => $item_id,
-                'payload_json' => $payload,
-            ) );
-        }
+        
         
         // Do NOT auto-award the bid here. Designer must click "Award project" separately.
         // Commit 3.A.1: Timeline step 3 complete (logs timeline_step_completed step 3)
