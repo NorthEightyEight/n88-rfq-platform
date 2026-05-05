@@ -1021,11 +1021,12 @@ class N88_RFQ_Auth {
 
     private function get_default_stage_milestone_blueprint() {
         return array(
-            array( 'stage_key' => '4_1_cad',       'stage_label' => '4.1 CAD Drawings Review',     'sort_order' => 10, 'percent_alloc' => 30 ),
-            array( 'stage_key' => '4_2_materials', 'stage_label' => '4.2 Materials Prepared',      'sort_order' => 20, 'percent_alloc' => 20 ),
-            array( 'stage_key' => '4_3_build',     'stage_label' => '4.3 Main Build',              'sort_order' => 30, 'percent_alloc' => 20 ),
-            array( 'stage_key' => '4_4_assembly',  'stage_label' => '4.4 Process & Assembly',      'sort_order' => 40, 'percent_alloc' => 15 ),
-            array( 'stage_key' => '4_5_finish',    'stage_label' => '4.5 Finishing Complete',      'sort_order' => 50, 'percent_alloc' => 15 ),
+            array( 'stage_key' => '4_1_planning',    'stage_label' => '4.1 Planning / Approval',      'sort_order' => 10, 'percent_alloc' => 20 ),
+            array( 'stage_key' => '4_2_preparation', 'stage_label' => '4.2 Preparation',              'sort_order' => 20, 'percent_alloc' => 16 ),
+            array( 'stage_key' => '4_3_core',        'stage_label' => '4.3 Core Development',         'sort_order' => 30, 'percent_alloc' => 16 ),
+            array( 'stage_key' => '4_4_assembly',    'stage_label' => '4.4 Assembly / Integration',   'sort_order' => 40, 'percent_alloc' => 16 ),
+            array( 'stage_key' => '4_5_refinement',  'stage_label' => '4.5 Refinement / Finishing',   'sort_order' => 50, 'percent_alloc' => 16 ),
+            array( 'stage_key' => '4_6_completion',  'stage_label' => '4.6 Completion',               'sort_order' => 60, 'percent_alloc' => 16 ),
         );
     }
 
@@ -1058,6 +1059,7 @@ class N88_RFQ_Auth {
         }
 
         $stages = array();
+        $active_stages = array();
         $paid_percent = 0.0;
         $next_stage = null;
         foreach ( (array) $rows as $row ) {
@@ -1092,6 +1094,9 @@ class N88_RFQ_Auth {
                 'payment_method'       => isset( $row['payment_method'] ) ? sanitize_key( $row['payment_method'] ) : '',
                 'payment_attachment_url' => ! empty( $row['payment_attachment_id'] ) ? esc_url_raw( wp_get_attachment_url( absint( $row['payment_attachment_id'] ) ) ) : '',
             );
+            if ( $enabled ) {
+                $active_stages[] = $stages[ count( $stages ) - 1 ];
+            }
         }
 
         return array(
@@ -1100,6 +1105,7 @@ class N88_RFQ_Auth {
             'next_stage_key'   => $next_stage && ! empty( $next_stage['stage_key'] ) ? sanitize_key( $next_stage['stage_key'] ) : '',
             'next_stage_label' => $next_stage && ! empty( $next_stage['stage_label'] ) ? sanitize_text_field( $next_stage['stage_label'] ) : '',
             'stages'           => $stages,
+            'active_stages'    => $active_stages,
         );
     }
 
@@ -2280,6 +2286,7 @@ class N88_RFQ_Auth {
             'step_2_validation',
             'step_3_commitment',
             'step_4_production',
+            'step_4_milestones',
             'step_5_quality',
             'step_6_delivery',
         );
@@ -2300,6 +2307,7 @@ class N88_RFQ_Auth {
             'step_2_validation' => 1,
             'step_3_commitment' => 2,
             'step_4_production' => 3,
+            'step_4_milestones' => 3,
             'step_5_quality'    => 4,
             'step_6_delivery'   => 5,
         );
@@ -11113,24 +11121,46 @@ class N88_RFQ_Auth {
                     // Step 4: Official Quote PDF  sirf award pe depend kare, payment se taaluq nahi. Award hote hi supplier ko Step 04 mein PDF upload option mile.
                     var renderSupplierMilestonesStep4 = function(summary, currentItemId) {
                         if (!summary || !summary.enabled || !Array.isArray(summary.stages) || !summary.stages.length) return '';
+                        // Keep supplier Step-4 UI consistent: always prefer the full milestone stage block
+                        // (tabs + guidance + per-stage message thread + submission fields).
+                        if (typeof buildSupplierMilestoneStageStep4Block === 'function') {
+                            var detailedMilestoneHtml = buildSupplierMilestoneStageStep4Block(currentItemId);
+                            if (detailedMilestoneHtml) return detailedMilestoneHtml;
+                        }
                         var esc = function(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function(c) { return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); };
+                        var supplierLabel = function(stage) {
+                            var key = stage && stage.stage_key ? String(stage.stage_key) : '';
+                            if (key === '4_1_planning') return '4.1 Planning / Approval (Supplier Perspective)';
+                            return stage && stage.stage_label ? String(stage.stage_label) : '';
+                        };
+                        var supplierStages = Array.isArray(summary.active_stages) ? summary.active_stages : [];
+                        if (!supplierStages.length) return '';
                         var nextKey = summary.next_stage_key || '';
+                        var hasNextKeyInList = false;
+                        for (var nsi = 0; nsi < supplierStages.length; nsi++) {
+                            if (String((supplierStages[nsi] && supplierStages[nsi].stage_key) || '') === String(nextKey || '')) {
+                                hasNextKeyInList = true;
+                                break;
+                            }
+                        }
+                        var activeStageKey = hasNextKeyInList ? String(nextKey) : String((supplierStages[0] && supplierStages[0].stage_key) || '');
                     var tabs = '<div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px;">';
-                        for (var ti = 0; ti < summary.stages.length; ti++) {
-                            var ts = summary.stages[ti] || {};
-                            var active = (nextKey && ts.stage_key === nextKey) || (!nextKey && ti === 0);
-                            tabs += '<button class="n88-supplier-stage-tab" data-item-id="' + Number(currentItemId || 0) + '" data-stage-key="' + esc(ts.stage_key || '') + '" type="button" onclick="n88SupplierOpenMilestoneStage(' + Number(currentItemId || 0) + ',\'' + esc(ts.stage_key || '') + '\')" style="padding:6px 10px; border-radius:4px; border:1px solid ' + (active ? '#FF0065' : '#444') + '; background:' + (active ? 'rgba(255,0,101,0.12)' : '#111') + '; color:' + (active ? '#FF0065' : '#bbb') + '; font-size:11px; cursor:pointer;">' + esc(ts.stage_label || ('Stage ' + (ti + 1))) + '</button>';
+                        for (var ti = 0; ti < supplierStages.length; ti++) {
+                            var ts = supplierStages[ti] || {};
+                            var active = String(ts.stage_key || '') === activeStageKey;
+                            tabs += '<button class="n88-supplier-stage-tab" data-item-id="' + Number(currentItemId || 0) + '" data-stage-key="' + esc(ts.stage_key || '') + '" type="button" onclick="n88SupplierOpenMilestoneStage(' + Number(currentItemId || 0) + ',\'' + esc(ts.stage_key || '') + '\')" style="padding:6px 10px; border-radius:4px; border:1px solid ' + (active ? '#FF0065' : '#444') + '; background:' + (active ? 'rgba(255,0,101,0.12)' : '#111') + '; color:' + (active ? '#FF0065' : '#bbb') + '; font-size:11px; cursor:pointer; transition:all 0.2s ease;">' + esc(supplierLabel(ts) || ('Stage ' + (ti + 1))) + '</button>';
                         }
                         tabs += '</div>';
                         var cards = '';
-                        for (var si = 0; si < summary.stages.length; si++) {
-                            var stage = summary.stages[si] || {};
+                        for (var si = 0; si < supplierStages.length; si++) {
+                            var stage = supplierStages[si] || {};
                             var stageKey = stage.stage_key || '';
-                            var isActiveStage = (nextKey && stageKey === nextKey) || (!nextKey && si === 0);
-                            var canSubmit = !!stage.stage_enabled && (isActiveStage || stage.payment_status === 'revision_requested');
+                            var isActiveStage = String(stageKey || '') === activeStageKey;
+                            var waitingDesigner = !!stage.stage_submitted_at && !stage.stage_approved_at && stage.payment_status !== 'revision_requested';
+                            var canSubmit = !!stage.stage_enabled && (isActiveStage || stage.payment_status === 'revision_requested') && !waitingDesigner && !stage.stage_approved_at;
                             var statusTxt = stage.stage_approved_at ? 'Approved' : (stage.stage_submitted_at ? 'Awaiting Approval' : (stage.payment_status === 'revision_requested' ? 'Revision Requested' : 'Pending submission'));
                             cards += '<div class="n88-supplier-stage-card" data-item-id="' + Number(currentItemId || 0) + '" data-stage-key="' + esc(stageKey) + '" style="display:' + (isActiveStage ? 'block' : 'none') + '; margin-bottom:10px; padding:10px; border:1px solid #444; border-radius:6px; background:#0f0f0f;">';
-                            cards += '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;"><div style="font-size:12px; color:#fff; font-weight:600;">' + esc(stage.stage_label || '') + ' (' + Number(stage.percent_alloc || 0) + '%)</div><div style="font-size:11px; color:#bbb;">' + esc(statusTxt) + '</div></div>';
+                            cards += '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;"><div style="font-size:12px; color:#fff; font-weight:600;">' + esc(supplierLabel(stage) || '') + ' (' + Number(stage.percent_alloc || 0) + '%)</div><div style="font-size:11px; color:#bbb;">' + esc(statusTxt) + '</div></div>';
                             if (stage.stage_revision_note) cards += '<div style="margin-bottom:8px; font-size:11px; color:#ffb347;">Revision note: ' + esc(stage.stage_revision_note) + '</div>';
                             if (Array.isArray(stage.stage_submission_history) && stage.stage_submission_history.length) {
                                 cards += '<div style="margin:8px 0; padding:8px; border:1px solid #333; border-radius:4px; background:#101010;">';
@@ -11153,14 +11183,16 @@ class N88_RFQ_Auth {
                                 cards += '<input type="file" name="stage_proof_file" required style="font-size:11px; color:#ddd;" />';
                                 cards += '<input type="url" name="stage_meeting_link" placeholder="Meeting link (optional)" style="background:#111; color:#ddd; border:1px solid #444; border-radius:4px; padding:6px; font-size:11px;" />';
                                 cards += '<textarea name="stage_note" rows="2" placeholder="Notes for designer (optional)" style="background:#111; color:#ddd; border:1px solid #444; border-radius:4px; padding:6px; font-size:11px;"></textarea>';
-                                cards += '<button type="submit" style="align-self:flex-start; padding:7px 12px; background:#FF0065; color:#000; border:none; border-radius:4px; font-weight:600; font-size:11px; cursor:pointer;">Submit ' + esc(stage.stage_label || 'Stage') + '</button>';
+                                cards += '<button type="submit" style="align-self:flex-start; padding:7px 12px; background:#FF0065; color:#000; border:none; border-radius:4px; font-weight:600; font-size:11px; cursor:pointer;">Submit ' + esc(supplierLabel(stage) || 'Stage') + '</button>';
                                 cards += '</form>';
                             } else if (stage.stage_approved_at && !stage.payment_confirmed_at) {
                                 if (stage.payment_attachment_url) cards += '<div style="margin-bottom:6px;"><a href="' + esc(stage.payment_attachment_url) + '" target="_blank" rel="noopener noreferrer" style="color:#FF0065;">View payment proof</a></div>';
                                 if (stage.payment_method) cards += '<div style="font-size:11px; color:#bbb; margin-bottom:4px;">Payment method: ' + esc(stage.payment_method) + '</div>';
                                 if (stage.payment_note) cards += '<div style="font-size:11px; color:#bbb; margin-bottom:4px;">Payment note: ' + esc(stage.payment_note) + '</div>';
                                 if (stage.payment_submitted_at) cards += '<div style="font-size:11px; color:#ffb347; margin-bottom:8px;">Payment submitted: ' + esc(stage.payment_submitted_at) + '</div>';
-                                cards += '<button type="button" onclick="n88SupplierApproveMilestonePayment(' + Number(currentItemId || 0) + ',\'' + esc(stageKey) + '\',this)" style="padding:7px 12px; background:#0f5132; color:#fff; border:none; border-radius:4px; font-weight:600; font-size:11px; cursor:pointer;">Confirm Payment</button>';
+                                cards += '<button type="button" onclick="n88SupplierApproveMilestonePayment(' + Number(currentItemId || 0) + ',\'' + esc(stageKey) + '\',this)" style="padding:7px 12px; background:#0f5132; color:#fff; border:none; border-radius:4px; font-weight:600; font-size:11px; cursor:pointer; transition:all 0.2s ease;">Confirm Payment</button>';
+                            } else if (waitingDesigner) {
+                                cards += '<div style="font-size:11px; color:#ffb347;">Waiting for designer response (Approval or Revision). Resubmission is locked.</div>';
                             } else if (stage.stage_approved_at) {
                                 cards += '<div style="font-size:11px; color:#4caf50;">Designer approved this stage.</div>';
                             } else {
@@ -11176,7 +11208,13 @@ class N88_RFQ_Auth {
                     var isAwardedForStep4 = effectiveBidStatus === 'awarded' || item.is_awarded_supplier === true || (item.bid_data && (item.bid_data.bid_status === 'awarded' || item.bid_data.is_awarded === true)) || (item.awarded_bid_id && item.bid_data && Number(item.bid_data.bid_id) === Number(item.awarded_bid_id));
                     if (productionStep4Unlocked) {
                         var supplierMilestoneSummaryPr = item.validation_state && item.validation_state.payment_milestones ? item.validation_state.payment_milestones : null;
-                        var supplierMilestoneStep4HTMLPr = renderSupplierMilestonesStep4(supplierMilestoneSummaryPr, (item.item_id || itemId));
+                        var supplierMilestoneStep4HTMLPr = '';
+                        if (typeof buildSupplierMilestoneStageStep4Block === 'function') {
+                            supplierMilestoneStep4HTMLPr = buildSupplierMilestoneStageStep4Block((item.item_id || itemId)) || '';
+                        }
+                        if (!supplierMilestoneStep4HTMLPr) {
+                            supplierMilestoneStep4HTMLPr = renderSupplierMilestonesStep4(supplierMilestoneSummaryPr, (item.item_id || itemId));
+                        }
                         if (validationCanCommit && validationProductionStarted) {
                             step4OfficialQuoteHTML = supplierMilestoneStep4HTMLPr || '<div style="padding: 12px; border: 1px solid #4caf50; border-radius: 4px; font-size: 12px; color: #d3d3d3; background: rgba(76,175,80,0.08);">Production in progress.</div>';
                         } else if (validationCanCommit) {
@@ -11208,7 +11246,13 @@ class N88_RFQ_Auth {
                         step4OfficialQuoteHTML = bidAndPrototype.workflowStep4OfficialQuote;
                     }
                     var supplierMilestoneSummary = item.validation_state && item.validation_state.payment_milestones ? item.validation_state.payment_milestones : null;
-                    var supplierMilestoneStep4HTML = renderSupplierMilestonesStep4(supplierMilestoneSummary, (item.item_id || itemId));
+                    var supplierMilestoneStep4HTML = '';
+                    if (typeof buildSupplierMilestoneStageStep4Block === 'function') {
+                        supplierMilestoneStep4HTML = buildSupplierMilestoneStageStep4Block((item.item_id || itemId)) || '';
+                    }
+                    if (!supplierMilestoneStep4HTML) {
+                        supplierMilestoneStep4HTML = renderSupplierMilestonesStep4(supplierMilestoneSummary, (item.item_id || itemId));
+                    }
                     if (!productionStep4Unlocked) {
                         if (validationCanCommit && validationProductionStarted) {
                             step4OfficialQuoteHTML = supplierMilestoneStep4HTML || '<div style="padding: 12px; border: 1px solid #4caf50; border-radius: 4px; font-size: 12px; color: #d3d3d3; background: rgba(76,175,80,0.08);">Production begins.</div>';
@@ -12009,6 +12053,25 @@ class N88_RFQ_Auth {
                         }
                         function buildSupplierStepEvidenceBlock(sel, itemId) {
                             if (!sel || !sel.step_id) return '';
+                            function buildSupplierGuidanceAccordionHtml(guide) {
+                                if (!guide) return '';
+                                var htmlGuide = '<div style="margin-bottom:10px; border:1px solid #2e2e2e; border-radius:4px; background:#101010; overflow:hidden;">';
+                                htmlGuide += '<div style="padding:8px 10px; font-size:10px; color:#FF4D9A; font-weight:700; letter-spacing:0.7px; text-transform:uppercase; border-bottom:1px solid #2e2e2e;">Guidance</div>';
+                                htmlGuide += '<details open style="border-bottom:1px solid #2e2e2e; background:#171717;"><summary style="cursor:pointer; color:#bcbcbc; font-weight:600; font-size:10px; letter-spacing:0.6px; text-transform:uppercase; padding:8px 10px;">Check</summary><ul style="margin:0; padding:0 16px 8px 24px; font-size:11px; color:' + darkText + ';">';
+                                for (var i = 0; i < (guide.check || []).length; i++) htmlGuide += '<li style="margin-bottom:3px;">' + escHtml(guide.check[i]) + '</li>';
+                                htmlGuide += '</ul></details>';
+                                htmlGuide += '<details style="border-bottom:1px solid #2e2e2e; background:#171717;"><summary style="cursor:pointer; color:#bcbcbc; font-weight:600; font-size:10px; letter-spacing:0.6px; text-transform:uppercase; padding:8px 10px;">Look deeper</summary><ul style="margin:0; padding:0 16px 8px 24px; font-size:11px; color:' + darkText + ';">';
+                                for (var j = 0; j < (guide.deeper || []).length; j++) htmlGuide += '<li style="margin-bottom:3px;">' + escHtml(guide.deeper[j]) + '</li>';
+                                htmlGuide += '</ul></details>';
+                                htmlGuide += '<details style="' + (Array.isArray(guide.actions) && guide.actions.length ? 'border-bottom:1px solid #2e2e2e;' : '') + ' background:#171717;"><summary style="cursor:pointer; color:#bcbcbc; font-weight:600; font-size:10px; letter-spacing:0.6px; text-transform:uppercase; padding:8px 10px;">Tip</summary><div style="padding:0 10px 8px 10px; font-size:11px; color:#ccc;">' + escHtml(guide.tip || '') + '</div></details>';
+                                if (Array.isArray(guide.actions) && guide.actions.length) {
+                                    htmlGuide += '<details style="background:#171717;"><summary style="cursor:pointer; color:#bcbcbc; font-weight:600; font-size:10px; letter-spacing:0.6px; text-transform:uppercase; padding:8px 10px;">Supplier Action</summary><ul style="margin:0; padding:0 16px 8px 24px; font-size:11px; color:' + darkText + ';">';
+                                    for (var k = 0; k < guide.actions.length; k++) htmlGuide += '<li style="margin-bottom:3px;">' + escHtml(guide.actions[k]) + '</li>';
+                                    htmlGuide += '</ul></details>';
+                                }
+                                htmlGuide += '</div>';
+                                return htmlGuide;
+                            }
                             var stepId = sel.step_id;
                             var stepNumber = sel.step_number || 0;
                             if (stepNumber === 4) return '';
@@ -12017,6 +12080,10 @@ class N88_RFQ_Auth {
                             // Acceptance: Supplier can submit video for Steps 5-6 only; Step 4 uses milestones; Steps 1-3 never show [ Submit Step Video ].
                             // Allow submit for Pending/In Progress/Completed (steps 5-6 default to Pending until operator starts them).
                             if (isStep456) {
+                                var supplierStepGuide = stepNumber === 5
+                                    ? { check: ['No defects or damage', 'Quality meets agreed standard', 'Packaging is secure'], deeper: ['Are defects repeated across items?', 'Is packaging strong enough for shipping?', 'Any risks during transport?'], tip: 'QC is proof - not assumption.', actions: ['Upload QC photos/videos', 'Show packaging process', 'Confirm readiness for shipment'] }
+                                    : { check: ['Shipment is complete and accurate', 'Documentation is correct', 'Items are properly packed and dispatched'], deeper: ['Any risks during transit?', 'Tracking and documentation aligned?', 'Handling done correctly?'], tip: 'Clear documentation prevents disputes.', actions: ['Upload shipment proof', 'Share tracking + shipping docs', 'Confirm dispatch and handoff status'] };
+                                block += buildSupplierGuidanceAccordionHtml(supplierStepGuide);
                                 var videos = step456Videos[stepNumber] || [];
                                 if (videos.length > 0) {
                                     for (var vi = 0; vi < videos.length; vi++) {
@@ -12053,25 +12120,68 @@ class N88_RFQ_Auth {
                         function buildSupplierMilestoneStageStep4Block(itemId) {
                             var summary = validationState && validationState.payment_milestones ? validationState.payment_milestones : null;
                             if (!summary || !summary.enabled || !Array.isArray(summary.stages) || !summary.stages.length) return '';
+                            var supplierGuideByStage = {
+                                '4_1_planning': { check: ['Specs, drawings, or scope are clearly defined', 'Materials/components are confirmed and documented', 'No missing or assumed details before starting'], deeper: ['Is everything build-ready or still open to interpretation?', 'Are tolerances, dimensions, and versions fully locked?', 'Did you clarify anything unclear with the buyer?'], tip: 'Do not start production with assumptions - confirm everything first.', actions: ['Upload drawings / specs / concepts', 'Highlight key details or risks', 'Submit for approval before moving forward'] },
+                                '4_2_preparation': { check: ['Correct materials/components are sourced', 'Colors, finishes, and references are accurate', 'No substitutions without approval'], deeper: ['Do samples match final production quality?', 'Are materials consistent across the order?', 'Any risks with availability or variation?'], tip: 'Show actual materials - not just references.', actions: ['Upload material samples / photos / confirmations', 'Call out substitutions or risks clearly', 'Submit for approval before production begins'] },
+                                '4_3_core': { check: ['Structure/output is being built correctly', 'Scale, layout, or composition is accurate', 'Work aligns with approved specs'], deeper: ['Any early defects or inconsistencies?', 'Is structure strong and aligned?', 'Would fixing issues later be difficult?'], tip: 'Show real progress - not staged or partial views.', actions: ['Upload progress photos/videos', 'Show multiple angles or views', 'Highlight any issues early'] },
+                                '4_4_assembly': { check: ['Components are fitting and assembling correctly', 'Alignment and spacing are clean', 'No stress points or mismatches'], deeper: ['Does everything integrate as expected?', 'Any inconsistencies across units?', 'Is functionality working correctly?'], tip: 'Capture full assembly - not just close-ups.', actions: ['Upload full assembly visuals', 'Show fit, alignment, and connections', 'Confirm consistency across items'] },
+                                '4_5_refinement': { check: ['Finish quality is clean and consistent', 'Color and detailing match expectations', 'No visible defects'], deeper: ['Are imperfections repeated across items?', 'Does the finish meet quality standards?', 'Does it match approved samples or visuals?'], tip: 'Lighting and angles matter - show true finish quality.', actions: ['Upload final finish photos/videos', 'Show surface quality clearly', 'Call out any minor imperfections'] },
+                                '4_6_completion': { check: ['Final output matches approved expectations', 'All items/components are complete', 'Nothing missing or unfinished'], deeper: ['Is everything consistent across the full order?', 'Ready for QC without additional work?', 'Any last risks before handoff?'], tip: 'Present it as if it is ready for delivery.', actions: ['Upload full final product set', 'Confirm completion status', 'Prepare for QC stage'] }
+                            };
+                            var buildSupplierGuidanceAccordion = function(guide) {
+                                if (!guide) return '';
+                                var ghtml = '<div style="margin-bottom:10px; border:1px solid #2e2e2e; border-radius:4px; background:#101010; overflow:hidden;">';
+                                ghtml += '<div style="padding:8px 10px; font-size:10px; color:#FF4D9A; font-weight:700; letter-spacing:0.7px; text-transform:uppercase; border-bottom:1px solid #2e2e2e;">Guidance</div>';
+                                ghtml += '<details open style="border-bottom:1px solid #2e2e2e; background:#171717;"><summary style="cursor:pointer; color:#bcbcbc; font-weight:600; font-size:10px; letter-spacing:0.6px; text-transform:uppercase; padding:8px 10px;">Check</summary><ul style="margin:0; padding:0 16px 8px 24px; font-size:11px; color:#bbb;">';
+                                for (var gi = 0; gi < (guide.check || []).length; gi++) ghtml += '<li style="margin-bottom:3px;">' + escHtml(guide.check[gi]) + '</li>';
+                                ghtml += '</ul></details>';
+                                ghtml += '<details style="border-bottom:1px solid #2e2e2e; background:#171717;"><summary style="cursor:pointer; color:#bcbcbc; font-weight:600; font-size:10px; letter-spacing:0.6px; text-transform:uppercase; padding:8px 10px;">Look deeper</summary><ul style="margin:0; padding:0 16px 8px 24px; font-size:11px; color:#bbb;">';
+                                for (var gj = 0; gj < (guide.deeper || []).length; gj++) ghtml += '<li style="margin-bottom:3px;">' + escHtml(guide.deeper[gj]) + '</li>';
+                                ghtml += '</ul></details>';
+                                ghtml += '<details style="border-bottom:1px solid #2e2e2e; background:#171717;"><summary style="cursor:pointer; color:#bcbcbc; font-weight:600; font-size:10px; letter-spacing:0.6px; text-transform:uppercase; padding:8px 10px;">Tip</summary><div style="padding:0 10px 8px 10px; font-size:11px; color:#ddd;">' + escHtml(guide.tip || '') + '</div></details>';
+                                ghtml += '<details style="background:#171717;"><summary style="cursor:pointer; color:#bcbcbc; font-weight:600; font-size:10px; letter-spacing:0.6px; text-transform:uppercase; padding:8px 10px;">Supplier Action</summary><ul style="margin:0; padding:0 16px 8px 24px; font-size:11px; color:#bbb;">';
+                                for (var gk = 0; gk < (guide.actions || []).length; gk++) ghtml += '<li style="margin-bottom:3px;">' + escHtml(guide.actions[gk]) + '</li>';
+                                ghtml += '</ul></details>';
+                                ghtml += '</div>';
+                                return ghtml;
+                            };
+                            var supplierLabel = function(stage) {
+                                var key = stage && stage.stage_key ? String(stage.stage_key) : '';
+                                if (key === '4_1_planning') return '4.1 Planning / Approval (Supplier Perspective)';
+                                return stage && stage.stage_label ? String(stage.stage_label) : '';
+                            };
+                            var supplierStages = Array.isArray(summary.active_stages) ? summary.active_stages : [];
+                            if (!supplierStages.length) return '';
                             var nextKey = summary.next_stage_key || '';
+                            var hasNextKeyInList = false;
+                            for (var nsi = 0; nsi < supplierStages.length; nsi++) {
+                                if (String((supplierStages[nsi] && supplierStages[nsi].stage_key) || '') === String(nextKey || '')) {
+                                    hasNextKeyInList = true;
+                                    break;
+                                }
+                            }
+                            var activeStageKey = hasNextKeyInList ? String(nextKey) : String((supplierStages[0] && supplierStages[0].stage_key) || '');
                             var html = '<div style="padding:12px; border:1px solid ' + darkBorder + '; border-radius:6px; background:#0f0f0f;">';
                             html += '<div style="font-size:12px; color:#ddd; margin-bottom:8px;">Submit stage progress with file, meeting link and notes.</div>';
                             html += '<div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px;">';
-                            for (var ti = 0; ti < summary.stages.length; ti++) {
-                                var ts = summary.stages[ti] || {};
-                                var tActive = (nextKey && ts.stage_key === nextKey) || (!nextKey && ti === 0);
-                                html += '<button class="n88-supplier-stage-tab" data-item-id="' + String(itemId) + '" data-stage-key="' + escHtml(ts.stage_key || '') + '" type="button" onclick="n88SupplierOpenMilestoneStage(' + String(itemId) + ',\'' + escHtml(ts.stage_key || '') + '\')" style="padding:6px 10px; border-radius:4px; border:1px solid ' + (tActive ? green : '#444') + '; background:' + (tActive ? 'rgba(255,0,101,0.12)' : '#111') + '; color:' + (tActive ? green : '#bbb') + '; font-size:11px; cursor:pointer;">' + escHtml(ts.stage_label || ('Stage ' + (ti + 1))) + '</button>';
+                            for (var ti = 0; ti < supplierStages.length; ti++) {
+                                var ts = supplierStages[ti] || {};
+                                var tActive = String(ts.stage_key || '') === activeStageKey;
+                                html += '<button class="n88-supplier-stage-tab" data-item-id="' + String(itemId) + '" data-stage-key="' + escHtml(ts.stage_key || '') + '" type="button" onclick="n88SupplierOpenMilestoneStage(' + String(itemId) + ',\'' + escHtml(ts.stage_key || '') + '\')" style="padding:6px 10px; border-radius:4px; border:1px solid ' + (tActive ? green : '#444') + '; background:' + (tActive ? 'rgba(255,0,101,0.12)' : '#111') + '; color:' + (tActive ? green : '#bbb') + '; font-size:11px; cursor:pointer; transition:all 0.2s ease;">' + escHtml(supplierLabel(ts) || ('Stage ' + (ti + 1))) + '</button>';
                             }
                             html += '</div>';
-                            for (var si = 0; si < summary.stages.length; si++) {
-                                var st = summary.stages[si] || {};
+                            for (var si = 0; si < supplierStages.length; si++) {
+                                var st = supplierStages[si] || {};
                                 var stKey = st.stage_key || '';
-                                var isActiveStage = (nextKey && stKey === nextKey) || (!nextKey && si === 0);
+                                var isActiveStage = String(stKey || '') === activeStageKey;
                                 var waitingDesigner = !!st.stage_submitted_at && !st.stage_approved_at && st.payment_status !== 'revision_requested';
-                                var canSubmit = !!st.stage_enabled && (isActiveStage || st.payment_status === 'revision_requested') && !waitingDesigner;
+                                var canSubmit = !!st.stage_enabled && (isActiveStage || st.payment_status === 'revision_requested') && !waitingDesigner && !st.stage_approved_at;
                                 var statusTxt = st.stage_approved_at ? 'Approved' : (st.stage_submitted_at ? 'Awaiting Approval' : (st.payment_status === 'revision_requested' ? 'Revision Requested' : 'Pending submission'));
                                 html += '<div class="n88-supplier-stage-card" data-item-id="' + String(itemId) + '" data-stage-key="' + escHtml(stKey) + '" style="display:' + (isActiveStage ? 'block' : 'none') + '; margin-bottom:10px; padding:10px; border:1px solid #444; border-radius:6px; background:#0b0b0b;">';
-                                html += '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;"><div style="font-size:12px; color:#fff; font-weight:600;">' + escHtml(st.stage_label || '') + ' (' + Number(st.percent_alloc || 0) + '%)</div><div style="font-size:11px; color:#bbb;">' + escHtml(statusTxt) + '</div></div>';
+                                html += '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;"><div style="font-size:12px; color:#fff; font-weight:600;">' + escHtml(supplierLabel(st) || '') + ' (' + Number(st.percent_alloc || 0) + '%)</div><div style="font-size:11px; color:#bbb;">' + escHtml(statusTxt) + '</div></div>';
+                                html += '<div style="display:grid; grid-template-columns:minmax(0,7fr) minmax(220px,3fr); gap:10px; align-items:start;">';
+                                html += '<div style="min-width:0;">';
+                                html += buildSupplierGuidanceAccordion(supplierGuideByStage[stKey] || null);
                                 if (st.stage_revision_note) html += '<div style="margin-bottom:8px; font-size:11px; color:#ffb347;">Revision note: ' + escHtml(st.stage_revision_note) + '</div>';
                                 if (Array.isArray(st.stage_submission_history) && st.stage_submission_history.length) {
                                     html += '<div style="margin:8px 0; padding:8px; border:1px solid #333; border-radius:4px; background:#101010;">';
@@ -12094,14 +12204,14 @@ class N88_RFQ_Auth {
                                     html += '<input type="file" name="stage_proof_file" required style="font-size:11px; color:#ddd;" />';
                                     html += '<input type="url" name="stage_meeting_link" placeholder="Meeting link (optional)" style="background:#111; color:#ddd; border:1px solid #444; border-radius:4px; padding:6px; font-size:11px;" />';
                                     html += '<textarea name="stage_note" rows="2" placeholder="Notes for designer (optional)" style="background:#111; color:#ddd; border:1px solid #444; border-radius:4px; padding:6px; font-size:11px;"></textarea>';
-                                    html += '<button type="submit" style="align-self:flex-start; padding:7px 12px; background:' + green + '; color:#000; border:none; border-radius:4px; font-weight:600; font-size:11px; cursor:pointer;">Submit ' + escHtml(st.stage_label || 'Stage') + '</button>';
+                                    html += '<button type="submit" style="align-self:flex-start; padding:7px 12px; background:' + green + '; color:#000; border:none; border-radius:4px; font-weight:600; font-size:11px; cursor:pointer;">Submit ' + escHtml(supplierLabel(st) || 'Stage') + '</button>';
                                     html += '</form>';
                                 } else if (st.stage_approved_at && !st.payment_confirmed_at) {
                                     if (st.payment_attachment_url) html += '<div style="margin-bottom:6px;"><a href="' + escHtml(st.payment_attachment_url) + '" target="_blank" rel="noopener noreferrer" style="color:#FF0065;">View payment proof</a></div>';
                                     if (st.payment_method) html += '<div style="font-size:11px; color:#bbb; margin-bottom:4px;">Payment method: ' + escHtml(st.payment_method) + '</div>';
                                     if (st.payment_note) html += '<div style="font-size:11px; color:#bbb; margin-bottom:4px;">Payment note: ' + escHtml(st.payment_note) + '</div>';
                                     if (st.payment_submitted_at) html += '<div style="font-size:11px; color:#ffb347; margin-bottom:8px;">Payment submitted: ' + escHtml(st.payment_submitted_at) + '</div>';
-                                    html += '<button type="button" onclick="n88SupplierApproveMilestonePayment(' + String(itemId) + ',\'' + escHtml(stKey) + '\',this)" style="padding:7px 12px; background:#0f5132; color:#fff; border:none; border-radius:4px; font-weight:600; font-size:11px; cursor:pointer;">Confirm Payment</button>';
+                                    html += '<button type="button" onclick="n88SupplierApproveMilestonePayment(' + String(itemId) + ',\'' + escHtml(stKey) + '\',this)" style="padding:7px 12px; background:#0f5132; color:#fff; border:none; border-radius:4px; font-weight:600; font-size:11px; cursor:pointer; transition:all 0.2s ease;">Confirm Payment</button>';
                                 } else if (waitingDesigner) {
                                     html += '<div style="font-size:11px; color:#ffb347;">Waiting for designer response (Approval or Revision). Resubmission is locked.</div>';
                                 } else if (st.stage_approved_at) {
@@ -12109,6 +12219,20 @@ class N88_RFQ_Auth {
                                 } else {
                                     html += '<div style="font-size:11px; color:#888;">This stage unlocks after previous stage approval.</div>';
                                 }
+                                html += '</div>';
+                                html += '<div style="border:1px solid #2e2e2e; border-radius:4px; background:#101010; overflow:hidden; display:flex; flex-direction:column; max-height:min(560px,78vh); min-width:0; position:sticky; top:0; align-self:start;">';
+                                html += '<div style="padding:8px 10px; border-bottom:1px solid #2e2e2e; font-size:10px; color:#FF4D9A; font-weight:700; letter-spacing:0.6px; text-transform:uppercase;">Messages</div>';
+                                html += '<div style="font-size:9px; color:#888; padding:6px 10px; border-bottom:1px solid #2e2e2e; line-height:1.35;">Designer / supplier thread for this milestone (latest first).</div>';
+                                html += '<div id="n88-supplier-stage-msgs-' + String(itemId) + '-' + String(stKey || '').replace(/[^a-zA-Z0-9_]/g, '_') + '" class="n88-supplier-stage-msgs-root" style="flex:1; min-height:120px; max-height:240px; overflow-y:auto; padding:8px 10px; border-bottom:1px solid #2e2e2e;"></div>';
+                                html += '<button type="button" id="n88-supplier-stage-loadolder-' + String(itemId) + '-' + String(stKey || '').replace(/[^a-zA-Z0-9_]/g, '_') + '" class="n88-supplier-stage-loadolder" data-item-id="' + String(itemId) + '" data-stage-key="' + escHtml(stKey) + '" onclick="return n88SupplierStageThreadLoadOlder(' + String(itemId) + ',\'' + escHtml(stKey) + '\');" style="width:100%; padding:6px; border:none; border-bottom:1px solid #2e2e2e; background:#161616; color:#bbb; cursor:pointer; font-size:10px; text-transform:uppercase;">Load older</button>';
+                                html += '<form onsubmit="return n88SupplierSendStageThreadMessage(this,' + String(itemId) + ',\'' + escHtml(stKey) + '\');" style="padding:8px 10px; flex-shrink:0;">';
+                                html += '<div style="display:flex; justify-content:flex-end; margin-bottom:6px;"><button type="button" onclick="var h=this.nextElementSibling;if(h&&h.click)h.click();return false;" style="background:#111; border:1px solid #444; padding:6px 10px; cursor:pointer; font-size:10px; color:#bbb; border-radius:12px;">Attach files</button><input type="file" name="message_attachments[]" class="n88-supplier-stage-attach-trigger" multiple accept=".pdf,.doc,.docx,image/*" style="display:none;" /></div>';
+                                html += '<div style="display:flex; align-items:flex-end; gap:0; background:#000; border:1px solid #333; border-radius:20px; padding:6px 10px 6px 12px; min-height:36px;">';
+                                html += '<textarea name="stage_thread_body" rows="2" required placeholder="Type your message..." style="flex:1; padding:6px 4px; background:transparent; color:#fff; border:none; outline:none; font-family:monospace; font-size:11px; resize:none; min-height:36px; max-height:96px;"></textarea>';
+                                html += '<button type="submit" style="padding:8px 14px; background:#FF0065; color:#000; border:none; border-radius:16px; font-family:monospace; font-size:10px; font-weight:700; cursor:pointer;">Send</button>';
+                                html += '</div>';
+                                html += '</form>';
+                                html += '</div>';
                                 html += '</div>';
                             }
                             html += '</div>';
@@ -12421,6 +12545,9 @@ class N88_RFQ_Auth {
                                         detEl.innerHTML = '<div style="font-size: 13px; font-weight: 600; color: #FF0065; margin-bottom: 4px;">' + stepNum + '. ' + (sel.label || '').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>' +
                                             (desc ? '<div style="font-size: 12px; color: #ccc; margin-bottom: 12px; line-height: 1.4;">' + desc.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>' : '') +
                                             milestoneStep4;
+                                        if (typeof window.n88SupplierHydrateVisibleStageThreadInRoot === 'function') {
+                                            window.n88SupplierHydrateVisibleStageThreadInRoot(detEl, itemId);
+                                        }
                                     } else {
                                         detEl.innerHTML = '<div style="font-size: 13px; font-weight: 600; color: #FF0065; margin-bottom: 4px;">' + stepNum + '. ' + (sel.label || '').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>' +
                                             (desc ? '<div style="font-size: 12px; color: #ccc; margin-bottom: 12px; line-height: 1.4;">' + desc.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>' : '') +
@@ -12546,6 +12673,9 @@ class N88_RFQ_Auth {
                                     content += buildSupplierStepEvidenceBlock(s, itemId);
                                 }
                                 el.innerHTML = content;
+                                if (stepN === 4 && typeof window.n88SupplierHydrateVisibleStageThreadInRoot === 'function') {
+                                    window.n88SupplierHydrateVisibleStageThreadInRoot(el, itemId);
+                                }
                             }
                         } else {
                             // Fallback: no original structure (e.g. direct timeline view)  full replace
@@ -17280,6 +17410,213 @@ class N88_RFQ_Auth {
                 }
                 return false;
             };
+            window.n88SupplierStageThreadIdSuffix = function(stageKey) {
+                return String(stageKey || '').replace(/[^a-zA-Z0-9_]/g, '_');
+            };
+            window.n88SupplierStageThreadStore = window.n88SupplierStageThreadStore || {};
+            window.n88SupplierStageThreadEscapeHtml = function(s) {
+                return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            };
+            window.n88SupplierRenderStageThreadFromStore = function(itemId, stageKey) {
+                var key = String(itemId) + '|' + String(stageKey);
+                var suff = window.n88SupplierStageThreadIdSuffix(stageKey);
+                var root = document.getElementById('n88-supplier-stage-msgs-' + String(itemId) + '-' + suff);
+                if (!root) return;
+                var st = window.n88SupplierStageThreadStore[key] || { byId: {} };
+                var byId = st.byId || {};
+                var list = [];
+                Object.keys(byId).forEach(function(mid) { list.push(byId[mid]); });
+                list.sort(function(a, b) {
+                    return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+                });
+                var stageTag = '[STAGE:' + stageKey + ']';
+                if (!list.length) {
+                    root.innerHTML = '<div style="font-size:11px;color:#777;">No messages yet.</div>';
+                    return;
+                }
+                var html = '';
+                for (var i = 0; i < list.length; i++) {
+                    var m = list[i];
+                    var txt = m.message_text != null ? String(m.message_text) : '';
+                    var bodyDisplay = txt.indexOf(stageTag) === 0 ? txt.substr(stageTag.length).replace(/^\s+/, '') : txt;
+                    var isMine = String(m.sender_role || '') === 'supplier';
+                    var rowBg = isMine ? 'rgba(255,0,101,0.12)' : '#171717';
+                    var attachments = [];
+                    try {
+                        var att = m.message_attachments ? (typeof m.message_attachments === 'string' ? JSON.parse(m.message_attachments) : m.message_attachments) : null;
+                        if (Array.isArray(att)) attachments = att;
+                    } catch (e2) {}
+                    html += '<div style="margin-bottom:8px;padding:6px;background:' + rowBg + ';border:1px solid #2a2a2a;border-radius:4px;text-align:' + (isMine ? 'right' : 'left') + '">';
+                    html += '<div style="font-size:10px;color:#999;margin-bottom:4px;">' + window.n88SupplierStageThreadEscapeHtml(String(m.created_at || '')) + ' — ' + (isMine ? 'You' : 'Designer') + '</div>';
+                    html += '<div style="font-size:11px;color:#ddd;white-space:pre-wrap;display:inline-block;max-width:100%;text-align:left">' + window.n88SupplierStageThreadEscapeHtml(bodyDisplay || '(message)') + '</div>';
+                    if (attachments.length) {
+                        html += '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;justify-content:' + (isMine ? 'flex-end' : 'flex-start') + '">';
+                        for (var ai = 0; ai < attachments.length; ai++) {
+                            var u = attachments[ai].url || '';
+                            var nm = attachments[ai].name || 'FILE';
+                            var isImg = /\.(jpe?g|png|gif|webp)(\?|$)/i.test(String(u));
+                            html += '<a href="' + String(u).replace(/"/g, '&quot;') + '" target="_blank" rel="noopener noreferrer" style="width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;border:1px solid #333;border-radius:5px;text-decoration:none;overflow:hidden">';
+                            if (isImg) html += '<img src="' + String(u).replace(/"/g, '&quot;') + '" alt="" style="width:100%;height:100%;object-fit:cover;display:block" />';
+                            else html += '<span style="font-size:7px;color:#FF0065">' + window.n88SupplierStageThreadEscapeHtml(nm) + '</span>';
+                            html += '</a>';
+                        }
+                        html += '</div>';
+                    }
+                    html += '</div>';
+                }
+                root.innerHTML = html;
+            };
+            window.n88SupplierFetchStageThreadPage = function(itemId, stageKey, reset) {
+                var key = String(itemId) + '|' + String(stageKey);
+                var suff = window.n88SupplierStageThreadIdSuffix(stageKey);
+                var rootId = 'n88-supplier-stage-msgs-' + String(itemId) + '-' + suff;
+                var btnId = 'n88-supplier-stage-loadolder-' + String(itemId) + '-' + suff;
+                var root = document.getElementById(rootId);
+                if (!root) return;
+                var btn = document.getElementById(btnId);
+                var st = window.n88SupplierStageThreadStore[key];
+                if (!st) {
+                    st = { offset: 0, byId: {}, hasMore: true, loading: false };
+                    window.n88SupplierStageThreadStore[key] = st;
+                }
+                if (st.loading) return;
+                if (reset) {
+                    st.offset = 0;
+                    st.byId = {};
+                    st.hasMore = true;
+                    root.innerHTML = '<div style="font-size:11px;color:#777;padding:4px 0;">Loading...</div>';
+                }
+                st.loading = true;
+                if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
+                var stageTag = '[STAGE:' + stageKey + ']';
+                var ajaxUrl = '<?php echo esc_url( admin_url( 'admin-ajax.php' ) ); ?>';
+                var fd = new FormData();
+                fd.append('action', 'n88_get_item_messages');
+                fd.append('item_id', String(itemId));
+                fd.append('thread_type', 'designer_supplier');
+                fd.append('context_type', 'step_4_milestones');
+                fd.append('limit', '40');
+                fd.append('offset', String(st.offset));
+                fd.append('_ajax_nonce', '<?php echo esc_js( wp_create_nonce( 'n88_get_item_messages' ) ); ?>');
+                fetch(ajaxUrl, { method: 'POST', body: fd, credentials: 'same-origin' })
+                    .then(function(r) { return r.json(); })
+                    .then(function(resp) {
+                        st.loading = false;
+                        if (!resp || !resp.success) {
+                            if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+                            root.innerHTML = '<div style="font-size:11px;color:#f66;">Could not load messages.</div>';
+                            return;
+                        }
+                        var data = resp.data || {};
+                        var msgs = data.messages || [];
+                        var returned = data.returned_count != null ? parseInt(data.returned_count, 10) : msgs.length;
+                        var baseOff = data.offset != null ? parseInt(data.offset, 10) : st.offset;
+                        if (isNaN(baseOff)) baseOff = st.offset;
+                        if (isNaN(returned)) returned = msgs.length;
+                        st.offset = baseOff + returned;
+                        st.hasMore = !!data.has_more;
+                        for (var i = 0; i < msgs.length; i++) {
+                            var m = msgs[i];
+                            var txt = m && m.message_text != null ? String(m.message_text) : '';
+                            if (txt.indexOf(stageTag) !== 0) continue;
+                            var mid = m.message_id != null ? String(m.message_id) : ('tmp-' + i + '-' + baseOff);
+                            st.byId[mid] = m;
+                        }
+                        window.n88SupplierStageThreadStore[key] = st;
+                        window.n88SupplierRenderStageThreadFromStore(itemId, stageKey);
+                        if (btn) {
+                            btn.disabled = !st.hasMore;
+                            btn.style.opacity = st.hasMore ? 1 : 0.45;
+                            btn.textContent = st.hasMore ? 'Load older' : 'No more';
+                        }
+                    })
+                    .catch(function() {
+                        st.loading = false;
+                        if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+                        root.innerHTML = '<div style="font-size:11px;color:#f66;">Could not load messages.</div>';
+                    });
+            };
+            window.n88SupplierHydrateStageThreadMessages = function(itemId, stageKey) {
+                window.n88SupplierFetchStageThreadPage(itemId, stageKey, true);
+            };
+            window.n88SupplierHydrateVisibleStageThreadInRoot = function(rootEl, itemIdRaw) {
+                if (!rootEl || typeof window.n88SupplierHydrateStageThreadMessages !== 'function') return;
+                setTimeout(function() {
+                    try {
+                        var vid = parseInt(itemIdRaw, 10);
+                        if (!vid) return;
+                        var cards = rootEl.querySelectorAll('.n88-supplier-stage-card');
+                        for (var c = 0; c < cards.length; c++) {
+                            var card = cards[c];
+                            if (card.style.display === 'none') continue;
+                            var sk = card.getAttribute('data-stage-key');
+                            if (!sk) continue;
+                            window.n88SupplierHydrateStageThreadMessages(vid, sk);
+                            break;
+                        }
+                    } catch (visErr) {}
+                }, 0);
+            };
+            window.n88SupplierStageThreadLoadOlder = function(itemId, stageKey) {
+                window.n88SupplierFetchStageThreadPage(itemId, stageKey, false);
+                return false;
+            };
+            window.n88SupplierSendStageThreadMessage = function(form, itemId, stageKey) {
+                try {
+                    var ta = form.querySelector('textarea[name="stage_thread_body"]');
+                    var body = ta && ta.value ? String(ta.value).trim() : '';
+                    if (!body) {
+                        alert('Please enter a message.');
+                        return false;
+                    }
+                    var submitBtn = form.querySelector('button[type="submit"]');
+                    var prevText = submitBtn ? submitBtn.textContent : '';
+                    if (submitBtn) {
+                        submitBtn.disabled = true;
+                        submitBtn.textContent = '...';
+                    }
+                    var fd = new FormData();
+                    fd.append('action', 'n88_send_item_message');
+                    fd.append('item_id', String(itemId));
+                    fd.append('thread_type', 'designer_supplier');
+                    fd.append('context_type', 'step_4_milestones');
+                    fd.append('message_text', '[STAGE:' + stageKey + ']\n\n' + body);
+                    fd.append('_ajax_nonce', '<?php echo esc_js( wp_create_nonce( 'n88_send_item_message' ) ); ?>');
+                    var filesInput = form.querySelector('input[type="file"][name="message_attachments[]"]');
+                    if (filesInput && filesInput.files && filesInput.files.length) {
+                        for (var fi = 0; fi < Math.min(filesInput.files.length, 5); fi++) {
+                            fd.append('message_attachments[]', filesInput.files[fi]);
+                        }
+                    }
+                    var ajaxUrl = '<?php echo esc_url( admin_url( 'admin-ajax.php' ) ); ?>';
+                    fetch(ajaxUrl, { method: 'POST', body: fd, credentials: 'same-origin' })
+                        .then(function(r) { return r.json(); })
+                        .then(function(resp) {
+                            if (submitBtn) {
+                                submitBtn.disabled = false;
+                                submitBtn.textContent = prevText || 'Send';
+                            }
+                            if (resp && resp.success) {
+                                if (ta) ta.value = '';
+                                if (filesInput) filesInput.value = '';
+                                window.n88SupplierFetchStageThreadPage(itemId, stageKey, true);
+                            } else {
+                                alert((resp && resp.data && resp.data.message) ? resp.data.message : 'Failed to send.');
+                            }
+                        })
+                        .catch(function() {
+                            if (submitBtn) {
+                                submitBtn.disabled = false;
+                                submitBtn.textContent = prevText || 'Send';
+                            }
+                            alert('Failed to send message.');
+                        });
+                } catch (e) {
+                    console.error(e);
+                    alert('Error sending message.');
+                }
+                return false;
+            };
             window.n88SupplierOpenMilestoneStage = function(itemId, stageKey) {
                 try {
                     var cards = document.querySelectorAll('.n88-supplier-stage-card[data-item-id="' + String(itemId) + '"]');
@@ -17295,6 +17632,10 @@ class N88_RFQ_Auth {
                         tab.style.borderColor = isActive ? '#FF0065' : '#444';
                         tab.style.background = isActive ? 'rgba(255,0,101,0.12)' : '#111';
                         tab.style.color = isActive ? '#FF0065' : '#bbb';
+                        tab.style.transform = isActive ? 'translateY(-1px)' : 'translateY(0)';
+                    }
+                    if (typeof window.n88SupplierHydrateStageThreadMessages === 'function') {
+                        window.n88SupplierHydrateStageThreadMessages(itemId, stageKey);
                     }
                 } catch (e) {
                     console.error('n88SupplierOpenMilestoneStage error:', e);
@@ -17309,9 +17650,12 @@ class N88_RFQ_Auth {
                         return false;
                     }
                     var submitBtn = form.querySelector('button[type="submit"]');
+                    var originalSubmitText = submitBtn ? submitBtn.textContent : 'Submit Stage';
                     if (submitBtn) {
                         submitBtn.disabled = true;
                         submitBtn.textContent = 'Submitting...';
+                        submitBtn.style.opacity = '0.75';
+                        submitBtn.style.cursor = 'wait';
                     }
                     var fd = new FormData();
                     fd.append('action', 'n88_submit_stage_progress_proof');
@@ -17329,6 +17673,8 @@ class N88_RFQ_Auth {
                             if (submitBtn) {
                                 submitBtn.disabled = false;
                                 submitBtn.textContent = 'Submitted';
+                                submitBtn.style.opacity = '1';
+                                submitBtn.style.cursor = 'pointer';
                             }
                             if (data && data.success) {
                                 alert((data.data && data.data.message) ? data.data.message : 'Stage progress submitted.');
@@ -17337,7 +17683,9 @@ class N88_RFQ_Auth {
                             } else {
                                 if (submitBtn) {
                                     submitBtn.disabled = false;
-                                    submitBtn.textContent = 'Submit Stage';
+                                    submitBtn.textContent = originalSubmitText;
+                                    submitBtn.style.opacity = '1';
+                                    submitBtn.style.cursor = 'pointer';
                                 }
                                 alert((data && data.data && data.data.message) ? data.data.message : 'Failed to submit stage progress.');
                             }
@@ -17346,7 +17694,9 @@ class N88_RFQ_Auth {
                             console.error('n88SupplierSubmitMilestoneProof error:', err);
                             if (submitBtn) {
                                 submitBtn.disabled = false;
-                                submitBtn.textContent = 'Submit Stage';
+                                submitBtn.textContent = originalSubmitText;
+                                submitBtn.style.opacity = '1';
+                                submitBtn.style.cursor = 'pointer';
                             }
                             alert('Error submitting stage progress. Please try again.');
                         });
@@ -17358,9 +17708,12 @@ class N88_RFQ_Auth {
             };
             window.n88SupplierApproveMilestonePayment = function(itemId, stageKey, btn) {
                 try {
+                    var originalBtnText = btn ? btn.textContent : 'Confirm Payment';
                     if (btn) {
                         btn.disabled = true;
                         btn.textContent = 'Confirming...';
+                        btn.style.opacity = '0.75';
+                        btn.style.cursor = 'wait';
                     }
                     var fd = new FormData();
                     fd.append('action', 'n88_approve_stage_payment');
@@ -17377,7 +17730,9 @@ class N88_RFQ_Auth {
                             } else {
                                 if (btn) {
                                     btn.disabled = false;
-                                    btn.textContent = 'Confirm Payment';
+                                    btn.textContent = originalBtnText;
+                                    btn.style.opacity = '1';
+                                    btn.style.cursor = 'pointer';
                                 }
                                 alert((data && data.data && data.data.message) ? data.data.message : 'Could not confirm payment.');
                             }
@@ -17386,7 +17741,9 @@ class N88_RFQ_Auth {
                             console.error('n88SupplierApproveMilestonePayment error:', err);
                             if (btn) {
                                 btn.disabled = false;
-                                btn.textContent = 'Confirm Payment';
+                                btn.textContent = originalBtnText;
+                                btn.style.opacity = '1';
+                                btn.style.cursor = 'pointer';
                             }
                             alert('Could not confirm payment.');
                         });
@@ -17394,7 +17751,9 @@ class N88_RFQ_Auth {
                     console.error('n88SupplierApproveMilestonePayment fatal error:', e);
                     if (btn) {
                         btn.disabled = false;
-                        btn.textContent = 'Confirm Payment';
+                        btn.textContent = originalBtnText;
+                        btn.style.opacity = '1';
+                        btn.style.cursor = 'pointer';
                     }
                     alert('Could not confirm payment.');
                 }
@@ -33900,7 +34259,27 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
             return;
         }
 
-        $rows = is_array( $rows_raw ) && ! empty( $rows_raw ) ? $rows_raw : $this->get_default_stage_milestone_blueprint();
+        $blueprint_rows = $this->get_default_stage_milestone_blueprint();
+        $rows_input = is_array( $rows_raw ) && ! empty( $rows_raw ) ? $rows_raw : $blueprint_rows;
+        $rows_by_key = array();
+        foreach ( (array) $rows_input as $input_row ) {
+            $input_key = isset( $input_row['stage_key'] ) ? sanitize_key( $input_row['stage_key'] ) : '';
+            if ( ! $input_key ) {
+                continue;
+            }
+            $rows_by_key[ $input_key ] = $input_row;
+        }
+
+        // Always persist all default stage keys so backend remains queryable for every stage,
+        // while stage_enabled controls which stages are active in workflow.
+        $rows = array();
+        foreach ( (array) $blueprint_rows as $default_row ) {
+            $default_key = isset( $default_row['stage_key'] ) ? sanitize_key( $default_row['stage_key'] ) : '';
+            if ( ! $default_key ) {
+                continue;
+            }
+            $rows[] = array_merge( $default_row, isset( $rows_by_key[ $default_key ] ) && is_array( $rows_by_key[ $default_key ] ) ? $rows_by_key[ $default_key ] : array() );
+        }
         $normalized = array();
         $total_percent = 0.0;
         $sort = 10;
@@ -33929,10 +34308,7 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
             $sort += 10;
         }
 
-        if ( abs( $total_percent - 100.0 ) > 0.01 ) {
-            wp_send_json_error( array( 'message' => 'Milestone total must equal 100%.' ), 400 );
-            return;
-        }
+        // Designer can enable any subset of stages; keep all stage rows in DB and drive flow via stage_enabled.
 
         $existing = $this->get_payment_milestone_rows( $item_id );
         $locked_keys = array();
@@ -34380,6 +34756,12 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
         if ( $context_type ) {
             if ( 'item_specs' === $context_type ) {
                 $where_clauses[] = "(m.context_type = 'item_specs' OR m.context_type = '' OR m.context_type IS NULL)";
+            } elseif ( 'step_4_production' === $context_type ) {
+                // Keep primary Step-4 thread isolated from milestone stage sub-threads (4.1 ... 4.6).
+                $where_clauses[] = "(m.context_type = 'step_4_production' AND (m.message_text IS NULL OR m.message_text NOT LIKE '[STAGE:%'))";
+            } elseif ( 'step_4_milestones' === $context_type ) {
+                // Backward compatibility: include older stage-tagged rows saved under step_4_production.
+                $where_clauses[] = "(m.context_type = 'step_4_milestones' OR (m.context_type = 'step_4_production' AND m.message_text LIKE '[STAGE:%'))";
             } else {
                 $where_clauses[] = $wpdb->prepare( 'm.context_type = %s', $context_type );
             }
@@ -36128,7 +36510,11 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
         $item_id = isset( $_POST['item_id'] ) ? absint( $_POST['item_id'] ) : 0;
         $bid_id = isset( $_POST['bid_id'] ) ? absint( $_POST['bid_id'] ) : 0;
         $version = isset( $_POST['version'] ) ? absint( $_POST['version'] ) : 0;
-    
+        
+        if ( ! $payment_id || ! $item_id || ! $bid_id || ! $version ) {
+            wp_send_json_error( array( 'message' => 'Invalid parameters.' ) );
+            return;
+        }
         
         global $wpdb;
         $prototype_payments_table = $wpdb->prefix . 'n88_prototype_payments';
@@ -36144,7 +36530,6 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
             wp_send_json_error( array( 'message' => 'Access denied or payment not found.' ) );
             return;
         }
-        
         
         $award_timestamp = current_time( 'mysql' );
         $prototype_approved_at = $award_timestamp;
@@ -36163,7 +36548,25 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
             array( '%d' )
         );
         
-        
+        // Log events (Commit 3.B.5B: prototype_approved)
+        if ( function_exists( 'n88_log_event' ) ) {
+            $payload = array(
+                'payment_id' => $payment_id,
+                'item_id' => $item_id,
+                'bid_id' => $bid_id,
+                'designer_id' => $current_user->ID,
+                'approved_version' => $version,
+                'awarded_supplier_id' => isset( $payment['supplier_id'] ) ? intval( $payment['supplier_id'] ) : null,
+                'award_timestamp' => $award_timestamp,
+                'prototype_approved_at' => $prototype_approved_at,
+                'timestamp' => current_time( 'mysql' ),
+            );
+            n88_log_event( 'prototype_approved', 'prototype_payment', array(
+                'object_id' => $payment_id,
+                'item_id' => $item_id,
+                'payload_json' => $payload,
+            ) );
+        }
         
         // Do NOT auto-award the bid here. Designer must click "Award project" separately.
         // Commit 3.A.1: Timeline step 3 complete (logs timeline_step_completed step 3)

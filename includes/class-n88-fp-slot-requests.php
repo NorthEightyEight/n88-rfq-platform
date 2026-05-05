@@ -13,6 +13,7 @@ class N88_FP_Slot_Requests {
     private static $did_create_table_option = 'n88_fp_slot_requests_schema_v1';
 
     private static $did_pm_col_check = false;
+    private static $did_item_col_check = false;
 
     public function __construct() {
         add_action( 'wp_ajax_n88_fp_slot_status', array( $this, 'ajax_status' ) );
@@ -129,6 +130,7 @@ class N88_FP_Slot_Requests {
         $user_id            = get_current_user_id();
         $board_id           = isset( $_POST['board_id'] ) ? absint( $_POST['board_id'] ) : 0;
         $requested_project = isset( $_POST['project_id'] ) ? absint( $_POST['project_id'] ) : 0;
+        $item_id           = isset( $_POST['item_id'] ) ? absint( $_POST['item_id'] ) : 0;
 
         $board = $board_id > 0 ? N88_Authorization::get_board_for_user( $board_id, $user_id ) : null;
         if ( $board_id > 0 && ! $board ) {
@@ -150,19 +152,36 @@ class N88_FP_Slot_Requests {
         if ( ! self::requests_table_ready() ) {
             self::install_tables();
         }
+        self::ensure_item_id_column();
         if ( self::requests_table_ready() ) {
             $tbl    = preg_replace( '/[^a-zA-Z0-9_]/', '', self::table_name() );
             $proj_q = isset( $_POST['project_id'] ) ? absint( wp_unslash( $_POST['project_id'] ) ) : 0;
-            $pending = $wpdb->get_results(
-                $wpdb->prepare(
-                    "SELECT id, status, created_at, attachment_id FROM {$tbl}
-					WHERE designer_user_id = %d AND board_id = %d AND status = %s ORDER BY id DESC LIMIT 3",
-                    $user_id,
-                    absint( $board_id ),
-                    'pending'
-                ),
-                ARRAY_A
-            );
+            $cols_status = $wpdb->get_col( "DESCRIBE {$tbl}" );
+            $has_item_col = is_array( $cols_status ) && in_array( 'item_id', $cols_status, true );
+            if ( $has_item_col && $item_id > 0 ) {
+                $pending = $wpdb->get_results(
+                    $wpdb->prepare(
+                        "SELECT id, status, created_at, attachment_id, item_id FROM {$tbl}
+						WHERE designer_user_id = %d AND board_id = %d AND item_id = %d AND status = %s ORDER BY id DESC LIMIT 3",
+                        $user_id,
+                        absint( $board_id ),
+                        $item_id,
+                        'pending'
+                    ),
+                    ARRAY_A
+                );
+            } else {
+                $pending = $wpdb->get_results(
+                    $wpdb->prepare(
+                        "SELECT id, status, created_at, attachment_id FROM {$tbl}
+						WHERE designer_user_id = %d AND board_id = %d AND status = %s ORDER BY id DESC LIMIT 3",
+                        $user_id,
+                        absint( $board_id ),
+                        'pending'
+                    ),
+                    ARRAY_A
+                );
+            }
         }
 
         $pending_summary = '';
@@ -181,6 +200,7 @@ class N88_FP_Slot_Requests {
                 'remaining'        => isset( $gate['remaining'] ) ? (int) $gate['remaining'] : 0,
                 'resolved_project' => absint( $resolved_project ),
                 'pending_notice'   => $pending_summary,
+                'pending_item_id'  => ( $item_id > 0 && ! empty( $pending ) ) ? $item_id : 0,
             )
         );
     }
@@ -231,14 +251,32 @@ class N88_FP_Slot_Requests {
         }
 
         self::ensure_designer_payment_method_column();
+        self::ensure_item_id_column();
+        global $wpdb;
 
         $user_id             = get_current_user_id();
         $board_id            = isset( $_POST['board_id'] ) ? absint( $_POST['board_id'] ) : 0;
         $posted_project_only = isset( $_POST['project_id'] ) ? absint( $_POST['project_id'] ) : 0;
+        $item_id             = isset( $_POST['item_id'] ) ? absint( $_POST['item_id'] ) : 0;
 
         $board = $board_id > 0 ? N88_Authorization::get_board_for_user( $board_id, $user_id ) : null;
         if ( $board_id <= 0 || ! $board ) {
             wp_send_json_error( array( 'message' => 'Select a workspace board first.' ), 400 );
+        }
+        if ( $item_id <= 0 ) {
+            wp_send_json_error( array( 'message' => 'Item context missing.' ), 400 );
+        }
+
+        $items_table = $wpdb->prefix . 'n88_items';
+        $item_row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT id, owner_user_id, meta_json, is_locked FROM {$items_table} WHERE id = %d AND deleted_at IS NULL LIMIT 1",
+                $item_id
+            ),
+            ARRAY_A
+        );
+        if ( ! $item_row || (int) $item_row['owner_user_id'] !== (int) $user_id ) {
+            wp_send_json_error( array( 'message' => 'Item not found or access denied.' ), 403 );
         }
 
         $resolved_project = N88_Item_Unlock::resolve_fp_project_for_new_item( $user_id, $board_id, $posted_project_only );
@@ -247,18 +285,27 @@ class N88_FP_Slot_Requests {
             wp_send_json_error( array( 'message' => 'You still have full-process slots available — add items directly.' ), 400 );
         }
 
-        global $wpdb;
         $tbl       = preg_replace( '/[^a-zA-Z0-9_]/', '', self::table_name() );
+        $cols_submit = $wpdb->get_col( "DESCRIBE {$tbl}" );
+        $has_item_col_submit = is_array( $cols_submit ) && in_array( 'item_id', $cols_submit, true );
         $duplicate = $wpdb->get_var(
-            $wpdb->prepare(
-                "SELECT id FROM {$tbl} WHERE designer_user_id = %d AND board_id = %d AND status = %s LIMIT 1",
-                $user_id,
-                absint( $board_id ),
-                'pending'
-            )
+            $has_item_col_submit
+                ? $wpdb->prepare(
+                    "SELECT id FROM {$tbl} WHERE designer_user_id = %d AND board_id = %d AND item_id = %d AND status = %s LIMIT 1",
+                    $user_id,
+                    absint( $board_id ),
+                    $item_id,
+                    'pending'
+                )
+                : $wpdb->prepare(
+                    "SELECT id FROM {$tbl} WHERE designer_user_id = %d AND board_id = %d AND status = %s LIMIT 1",
+                    $user_id,
+                    absint( $board_id ),
+                    'pending'
+                )
         );
         if ( $duplicate ) {
-            wp_send_json_error( array( 'message' => 'You already have a pending payment approval for this board.' ), 400 );
+            wp_send_json_error( array( 'message' => 'You already submitted payment proof for this item. Please wait for approval.' ), 400 );
         }
 
         require_once ABSPATH . 'wp-admin/includes/file.php';
@@ -337,6 +384,10 @@ class N88_FP_Slot_Requests {
             $row_data['designer_payment_method'] = $payment_method;
             $row_fmt[]                         = '%s';
         }
+        if ( is_array( $cols ) && in_array( 'item_id', $cols, true ) ) {
+            $row_data['item_id'] = $item_id;
+            $row_fmt[]           = '%d';
+        }
 
         $ins = $wpdb->insert( $tbl, $row_data, $row_fmt );
 
@@ -360,6 +411,7 @@ class N88_FP_Slot_Requests {
         }
 
         self::ensure_designer_payment_method_column();
+        self::ensure_item_id_column();
 
         if ( ! self::requests_table_ready() ) {
             wp_send_json_success( array( 'rows' => array() ) );
@@ -376,7 +428,7 @@ class N88_FP_Slot_Requests {
 
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- table name sanitized
         $rows = $wpdb->get_results(
-            "SELECT r.id, r.designer_user_id, r.board_id, r.project_id, r.resolved_project_id, r.status, r.attachment_id{$pm_sel}, r.created_at, r.reviewer_user_id, r.reviewed_at, r.reviewer_note 
+            "SELECT r.id, r.designer_user_id, r.board_id, r.item_id, r.project_id, r.resolved_project_id, r.status, r.attachment_id{$pm_sel}, r.created_at, r.reviewer_user_id, r.reviewed_at, r.reviewer_note 
 			FROM {$tbl} AS r WHERE r.status = 'pending' ORDER BY r.created_at ASC LIMIT 100",
             ARRAY_A
         );
@@ -396,6 +448,7 @@ class N88_FP_Slot_Requests {
                 'proof_url' => $aid ? wp_get_attachment_url( $aid ) : '',
                 'payment_method' => isset( $rw['designer_payment_method'] ) ? (string) $rw['designer_payment_method'] : '',
                 'status' => isset( $rw['status'] ) ? (string) $rw['status'] : '',
+                'item_id' => isset( $rw['item_id'] ) ? absint( $rw['item_id'] ) : 0,
             );
         }
 
@@ -430,6 +483,7 @@ class N88_FP_Slot_Requests {
 
         $designer_user_id       = isset( $req['designer_user_id'] ) ? absint( $req['designer_user_id'] ) : 0;
         $resolved_project_grant = isset( $req['resolved_project_id'] ) ? absint( $req['resolved_project_id'] ) : 0;
+        $request_item_id        = isset( $req['item_id'] ) ? absint( $req['item_id'] ) : 0;
 
         $now = current_time( 'mysql' );
         $op  = get_current_user_id();
@@ -451,7 +505,20 @@ class N88_FP_Slot_Requests {
         }
 
         $board_grant = isset( $req['board_id'] ) ? absint( $req['board_id'] ) : 0;
-        if ( $board_grant > 0 ) {
+        if ( $request_item_id > 0 ) {
+            $items_table = $wpdb->prefix . 'n88_items';
+            $wpdb->update(
+                $items_table,
+                array(
+                    'is_free'   => 0,
+                    'is_paid'   => 1,
+                    'is_locked' => 0,
+                ),
+                array( 'id' => $request_item_id ),
+                array( '%d', '%d', '%d' ),
+                array( '%d' )
+            );
+        } elseif ( $board_grant > 0 ) {
             N88_Item_Unlock::grant_one_additional_board_fp_slot( $board_grant );
         } else {
             N88_Item_Unlock::grant_one_additional_fp_slot( $resolved_project_grant, $designer_user_id );
@@ -553,6 +620,23 @@ class N88_FP_Slot_Requests {
         $wpdb->query( "ALTER TABLE {$tbl} ADD COLUMN designer_payment_method VARCHAR(120) NOT NULL DEFAULT '' AFTER attachment_id" );
         $did_check = true;
     }
+    private static function ensure_item_id_column() {
+        global $wpdb;
+        if ( self::$did_item_col_check ) {
+            return;
+        }
+        if ( ! self::requests_table_ready() ) {
+            return;
+        }
+        $tbl = preg_replace( '/[^a-zA-Z0-9_]/', '', self::table_name() );
+        $cols = $wpdb->get_col( "DESCRIBE {$tbl}", 0 );
+        if ( is_array( $cols ) && in_array( 'item_id', $cols, true ) ) {
+            self::$did_item_col_check = true;
+            return;
+        }
+        $wpdb->query( "ALTER TABLE {$tbl} ADD COLUMN item_id BIGINT UNSIGNED NOT NULL DEFAULT 0 AFTER board_id" );
+        self::$did_item_col_check = true;
+    }
 
     /**
      * Called by installer once.
@@ -568,6 +652,7 @@ class N88_FP_Slot_Requests {
 			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 			designer_user_id BIGINT UNSIGNED NOT NULL,
 			board_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+			item_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
 			project_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
 			resolved_project_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
 			status VARCHAR(20) NOT NULL DEFAULT 'pending',
@@ -581,6 +666,7 @@ class N88_FP_Slot_Requests {
 			PRIMARY KEY (id),
 			KEY designer_user_id (designer_user_id),
 			KEY board_id (board_id),
+			KEY item_id (item_id),
 			KEY project_id (project_id),
 			KEY resolved_project_id (resolved_project_id),
 			KEY status_created (status, created_at)

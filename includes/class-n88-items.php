@@ -224,9 +224,6 @@ class N88_Items {
         $board_item_links = array();
         $board_access_cache = array();
 
-        /** @var array<string,int> Tracks remaining FP create budget within this transaction (multi-item batch). */
-        $fp_budget_remaining = array();
-
         // Create profile once per batch instead of per item.
         $this->ensure_designer_profile( $user_id );
 
@@ -411,35 +408,6 @@ class N88_Items {
                 $resolved_row_project = $fp_counter_project;
             }
 
-            if ( class_exists( 'N88_Item_Unlock' ) && N88_Item_Unlock::items_unlock_columns_exist() ) {
-                $bid = absint( $board_id );
-                if ( $bid > 0 && ( 'full_process' === $entry_mode || 'production_only' === $entry_mode ) ) {
-                    $budget_key = 'b:' . $bid;
-                    if ( ! isset( $fp_budget_remaining[ $budget_key ] ) ) {
-                        $g_tmp                              = N88_Item_Unlock::get_fp_slot_gate( $fp_counter_project, $user_id, $board_id );
-                        $fp_budget_remaining[ $budget_key ] = (int) max( 0, (int) $g_tmp['remaining'] );
-                    }
-                    if ( $fp_budget_remaining[ $budget_key ] < 1 ) {
-                        throw new Exception( 'Item ' . ( $idx + 1 ) . ': Workspace item slot limit reached. Submit payment proof for this board to unlock another item.' );
-                    }
-                    --$fp_budget_remaining[ $budget_key ];
-                } elseif ( 'full_process' === $entry_mode ) {
-                    if ( $fp_counter_project > 0 ) {
-                        $budget_key = 'p:' . absint( $fp_counter_project );
-                    } else {
-                        $budget_key = 'u:' . absint( $user_id );
-                    }
-                    if ( ! isset( $fp_budget_remaining[ $budget_key ] ) ) {
-                        $g_tmp                                = N88_Item_Unlock::get_fp_slot_gate( $fp_counter_project, $user_id, $board_id );
-                        $fp_budget_remaining[ $budget_key ] = (int) max( 0, (int) $g_tmp['remaining'] );
-                    }
-                    if ( $fp_budget_remaining[ $budget_key ] < 1 ) {
-                        throw new Exception( 'Item ' . ( $idx + 1 ) . ': Full-process slot limit reached. Submit payment proof for this board to unlock another item.' );
-                    }
-                    --$fp_budget_remaining[ $budget_key ];
-                }
-            }
-
             if ( $has_project_id && $resolved_row_project > 0 ) {
                 $insert_data['project_id'] = $resolved_row_project;
                 $insert_format[] = '%d';
@@ -459,6 +427,11 @@ class N88_Items {
 
             if ( class_exists( 'N88_Item_Unlock' ) && N88_Item_Unlock::items_unlock_columns_exist() ) {
                 $uf                       = N88_Item_Unlock::flags_for_new_item( $entry_mode, $fp_counter_project, $user_id, $board_id );
+                if ( 'full_process' === $entry_mode || 'production_only' === $entry_mode ) {
+                    $uf['is_free'] = 0;
+                    $uf['is_paid'] = 0;
+                    $uf['is_locked'] = 1;
+                }
                 $insert_data['is_free']   = $uf['is_free'];
                 $insert_data['is_paid']   = $uf['is_paid'];
                 $insert_data['is_locked'] = $uf['is_locked'];
@@ -977,29 +950,7 @@ class N88_Items {
             $row_project_id     = $fp_counter_project;
         }
 
-        if ( class_exists( 'N88_Item_Unlock' ) && N88_Item_Unlock::items_unlock_columns_exist() ) {
-            if ( absint( $board_id_req ) > 0 && ( 'full_process' === $entry_mode || 'production_only' === $entry_mode ) ) {
-                if ( ! N88_Item_Unlock::full_process_slot_available( $fp_counter_project, $user_id, $board_id_req ) ) {
-                    wp_send_json_error(
-                        array(
-                            'message' => 'Workspace item slots for this board are used. Submit payment proof from [ + Add Item ] to request another slot.',
-                            'code' => 'n88_fp_slot_required',
-                        ),
-                        403
-                    );
-                }
-            } elseif ( 'full_process' === $entry_mode ) {
-                if ( ! N88_Item_Unlock::full_process_slot_available( $fp_counter_project, $user_id, $board_id_req ) ) {
-                    wp_send_json_error(
-                        array(
-                            'message' => 'Full-process slots for this project are used. Submit payment proof from [ + Add Item (Full) ] to request another slot.',
-                            'code' => 'n88_fp_slot_required',
-                        ),
-                        403
-                    );
-                }
-            }
-        }
+        // New requirement: creating items should not be blocked by slot cap; full-process items start locked.
 
         // Insert item
         $insert_data = array(
@@ -1042,6 +993,11 @@ class N88_Items {
 
         if ( class_exists( 'N88_Item_Unlock' ) && N88_Item_Unlock::items_unlock_columns_exist() ) {
             $uf                       = N88_Item_Unlock::flags_for_new_item( $entry_mode, $fp_counter_project, $user_id, $board_id_req );
+            if ( 'full_process' === $entry_mode || 'production_only' === $entry_mode ) {
+                $uf['is_free'] = 0;
+                $uf['is_paid'] = 0;
+                $uf['is_locked'] = 1;
+            }
             $insert_data['is_free']   = $uf['is_free'];
             $insert_data['is_paid']   = $uf['is_paid'];
             $insert_data['is_locked'] = $uf['is_locked'];
@@ -2227,6 +2183,27 @@ class N88_Items {
         if ( array_key_exists( 'custom_specification', $payload ) ) {
             $meta['custom_specification'] = sanitize_textarea_field( (string) $payload['custom_specification'] );
         }
+        if ( array_key_exists( 'selected_keyword_ids', $payload ) ) {
+            $selected_keyword_ids = is_array( $payload['selected_keyword_ids'] ) ? $payload['selected_keyword_ids'] : array();
+            $meta['selected_keyword_ids'] = array_values( array_unique( array_filter( array_map( 'absint', $selected_keyword_ids ) ) ) );
+        }
+        
+        if ( isset( $payload['dims_cm'] ) ) {
+            $meta['dims_cm'] = $payload['dims_cm'];
+        }
+        
+        if ( isset( $payload['cbm'] ) ) {
+            $meta['cbm'] = floatval( $payload['cbm'] );
+        }
+        
+        if ( isset( $payload['sourcing_type'] ) ) {
+            $meta['sourcing_type'] = sanitize_text_field( $payload['sourcing_type'] );
+        }
+        
+        if ( isset( $payload['timeline_type'] ) ) {
+            $meta['timeline_type'] = sanitize_text_field( $payload['timeline_type'] );
+        }
+        
         if ( isset( $payload['inspiration'] ) ) {
             // Validate and sanitize inspiration array
             $inspiration = $payload['inspiration'];
@@ -3007,7 +2984,7 @@ class N88_Items {
     }
 
     /**
-     * Commit 3.D.8B: Instant unlock (display $149; no checkout in this handler).
+     * Unlock a full-process item only when an approved slot is available.
      */
     public function ajax_unlock_item() {
         N88_RFQ_Helpers::verify_ajax_nonce();
@@ -3060,6 +3037,26 @@ class N88_Items {
                     'workflow_eligible'  => true,
                     'unlock_price_usd'   => N88_Item_Unlock::UNLOCK_PRICE_USD,
                 )
+            );
+        }
+
+        $board_id_for_gate = 0;
+        $board_items_table = $wpdb->prefix . 'n88_board_items';
+        $board_id_for_gate = (int) $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT board_id FROM {$board_items_table} WHERE item_id = %d AND removed_at IS NULL ORDER BY id DESC LIMIT 1",
+                $item_id
+            )
+        );
+
+        $gate_project = N88_Item_Unlock::resolve_fp_project_for_new_item( $uid, $board_id_for_gate, 0 );
+        if ( ! N88_Item_Unlock::full_process_slot_available( $gate_project, $uid, $board_id_for_gate ) ) {
+            wp_send_json_error(
+                array(
+                    'message' => 'No approved unlock slot is available yet. Submit payment proof and wait for approval.',
+                    'code'    => 'n88_fp_slot_required',
+                ),
+                403
             );
         }
 

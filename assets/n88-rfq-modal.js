@@ -1619,6 +1619,11 @@
                 });
             }
 
+        document.addEventListener('click', (e) => {
+                if (!this.wrapper.contains(e.target)) {
+                    this.closePanel();
+                }
+            });
 
             if (this.markAllBtn) {
                 this.markAllBtn.addEventListener('click', (e) => {
@@ -1709,6 +1714,36 @@
                 console.error('Notification fetch error:', error);
                 this.loadingState.style.display = 'none';
                 this.showEmpty('Unable to load notifications.');
+            });
+        },
+
+        fetchUnreadCount: function() {
+            if (!this.countBadge) {
+                return;
+            }
+
+            const params = new URLSearchParams({
+                action: 'n88_get_unread_count',
+                nonce: n88.nonce
+            });
+
+            fetch(n88.ajaxUrl, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: params
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.data) {
+                    this.updateCountBadge(data.data.unread_count || 0);
+                }
+            })
+            .catch(error => {
+                console.error('Unread count error:', error);
             });
         },
 

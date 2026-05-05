@@ -528,10 +528,11 @@ class N88_Item_Unlock {
      * @param array<string,mixed>|null $meta Meta array.
      * @param int|string|null          $is_free DB flag.
      * @param int|string|null          $is_paid DB flag.
+     * @param int|string|null          $is_locked DB flag.
      * @return bool
      */
-    public static function workflow_eligible( $meta, $is_free = null, $is_paid = null ) {
-        return true;
+    public static function workflow_eligible( $meta, $is_free = null, $is_paid = null, $is_locked = null ) {
+        return ! ( (int) $is_locked === 1 );
     }
 
     /**
@@ -560,7 +561,7 @@ class N88_Item_Unlock {
             $is_locked  = 0;
         }
 
-        $eligible = true;
+        $eligible = self::workflow_eligible( $meta, $is_free, $is_paid, $is_locked );
 
         return array(
             'entry_mode'          => $entry,
@@ -798,7 +799,8 @@ class N88_Item_Unlock {
             $meta   = is_array( $meta ) ? $meta : array();
             $is_f   = isset( $row['is_free'] ) ? $row['is_free'] : null;
             $is_p   = isset( $row['is_paid'] ) ? $row['is_paid'] : null;
-            $ok     = self::workflow_eligible( $meta, $is_f, $is_p );
+            $is_l   = isset( $row['is_locked'] ) ? $row['is_locked'] : null;
+            $ok     = self::workflow_eligible( $meta, $is_f, $is_p, $is_l );
             if ( $ok ) {
                 $eligible[] = $mid;
             } else {
