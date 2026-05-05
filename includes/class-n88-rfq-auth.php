@@ -11124,7 +11124,7 @@ class N88_RFQ_Auth {
                         // Keep supplier Step-4 UI consistent: always prefer the full milestone stage block
                         // (tabs + guidance + per-stage message thread + submission fields).
                         if (typeof buildSupplierMilestoneStageStep4Block === 'function') {
-                            var detailedMilestoneHtml = buildSupplierMilestoneStageStep4Block(currentItemId);
+                            var detailedMilestoneHtml = buildSupplierMilestoneStageStep4Block(currentItemId, summary);
                             if (detailedMilestoneHtml) return detailedMilestoneHtml;
                         }
                         var esc = function(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function(c) { return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); };
@@ -11144,11 +11144,14 @@ class N88_RFQ_Auth {
                             }
                         }
                         var activeStageKey = hasNextKeyInList ? String(nextKey) : String((supplierStages[0] && supplierStages[0].stage_key) || '');
+                        if (typeof window.n88SupplierMilestoneScopeSeq !== 'number') window.n88SupplierMilestoneScopeSeq = 0;
+                        window.n88SupplierMilestoneScopeSeq += 1;
+                        var milestoneScopeUid = 'n88_ms_' + Number(currentItemId || 0) + '_' + window.n88SupplierMilestoneScopeSeq;
                     var tabs = '<div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px;">';
                         for (var ti = 0; ti < supplierStages.length; ti++) {
                             var ts = supplierStages[ti] || {};
                             var active = String(ts.stage_key || '') === activeStageKey;
-                            tabs += '<button class="n88-supplier-stage-tab" data-item-id="' + Number(currentItemId || 0) + '" data-stage-key="' + esc(ts.stage_key || '') + '" type="button" onclick="n88SupplierOpenMilestoneStage(' + Number(currentItemId || 0) + ',\'' + esc(ts.stage_key || '') + '\')" style="padding:6px 10px; border-radius:4px; border:1px solid ' + (active ? '#FF0065' : '#444') + '; background:' + (active ? 'rgba(255,0,101,0.12)' : '#111') + '; color:' + (active ? '#FF0065' : '#bbb') + '; font-size:11px; cursor:pointer; transition:all 0.2s ease;">' + esc(supplierLabel(ts) || ('Stage ' + (ti + 1))) + '</button>';
+                            tabs += '<button class="n88-supplier-stage-tab" data-item-id="' + Number(currentItemId || 0) + '" data-scope-uid="' + esc(milestoneScopeUid) + '" data-stage-key="' + esc(ts.stage_key || '') + '" data-target-card-id="n88-supplier-stage-card-' + Number(currentItemId || 0) + '-' + String(ts.stage_key || '').replace(/[^a-zA-Z0-9_]/g, '_') + '" type="button" onclick="return n88SupplierActivateMilestoneStageTab(this);" style="padding:6px 10px; border-radius:4px; border:1px solid ' + (active ? '#FF0065' : '#444') + '; background:' + (active ? 'rgba(255,0,101,0.12)' : '#111') + '; color:' + (active ? '#FF0065' : '#bbb') + '; font-size:11px; cursor:pointer; transition:all 0.2s ease;">' + esc(supplierLabel(ts) || ('Stage ' + (ti + 1))) + '</button>';
                         }
                         tabs += '</div>';
                         var cards = '';
@@ -11159,7 +11162,7 @@ class N88_RFQ_Auth {
                             var waitingDesigner = !!stage.stage_submitted_at && !stage.stage_approved_at && stage.payment_status !== 'revision_requested';
                             var canSubmit = !!stage.stage_enabled && (isActiveStage || stage.payment_status === 'revision_requested') && !waitingDesigner && !stage.stage_approved_at;
                             var statusTxt = stage.stage_approved_at ? 'Approved' : (stage.stage_submitted_at ? 'Awaiting Approval' : (stage.payment_status === 'revision_requested' ? 'Revision Requested' : 'Pending submission'));
-                            cards += '<div class="n88-supplier-stage-card" data-item-id="' + Number(currentItemId || 0) + '" data-stage-key="' + esc(stageKey) + '" style="display:' + (isActiveStage ? 'block' : 'none') + '; margin-bottom:10px; padding:10px; border:1px solid #444; border-radius:6px; background:#0f0f0f;">';
+                            cards += '<div id="n88-supplier-stage-card-' + Number(currentItemId || 0) + '-' + String(stageKey || '').replace(/[^a-zA-Z0-9_]/g, '_') + '" class="n88-supplier-stage-card" data-item-id="' + Number(currentItemId || 0) + '" data-stage-key="' + esc(stageKey) + '" style="display:' + (isActiveStage ? 'block' : 'none') + '; margin-bottom:10px; padding:10px; border:1px solid #444; border-radius:6px; background:#0f0f0f;">';
                             cards += '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;"><div style="font-size:12px; color:#fff; font-weight:600;">' + esc(supplierLabel(stage) || '') + ' (' + Number(stage.percent_alloc || 0) + '%)</div><div style="font-size:11px; color:#bbb;">' + esc(statusTxt) + '</div></div>';
                             if (stage.stage_revision_note) cards += '<div style="margin-bottom:8px; font-size:11px; color:#ffb347;">Revision note: ' + esc(stage.stage_revision_note) + '</div>';
                             if (Array.isArray(stage.stage_submission_history) && stage.stage_submission_history.length) {
@@ -11200,9 +11203,9 @@ class N88_RFQ_Auth {
                             }
                             cards += '</div>';
                         }
-                        return '<div style="padding:12px; border:1px solid #555; border-radius:6px; background:#0b0b0b;">' +
+                        return '<div class="n88-supplier-stage-scope" data-stage-scope="1" data-scope-uid="' + esc(milestoneScopeUid) + '" data-item-id="' + Number(currentItemId || 0) + '" style="padding:12px; border:1px solid #555; border-radius:6px; background:#0b0b0b;">' +
                             '<div style="font-size:12px; color:#ddd; margin-bottom:8px;">Submit stage progress with file + notes.</div>' +
-                            tabs + cards + '</div>';
+                            tabs + '<div class="n88-supplier-stage-panels">' + cards + '</div></div>';
                     };
                     var step4OfficialQuoteHTML = '';
                     var isAwardedForStep4 = effectiveBidStatus === 'awarded' || item.is_awarded_supplier === true || (item.bid_data && (item.bid_data.bid_status === 'awarded' || item.bid_data.is_awarded === true)) || (item.awarded_bid_id && item.bid_data && Number(item.bid_data.bid_id) === Number(item.awarded_bid_id));
@@ -11210,7 +11213,7 @@ class N88_RFQ_Auth {
                         var supplierMilestoneSummaryPr = item.validation_state && item.validation_state.payment_milestones ? item.validation_state.payment_milestones : null;
                         var supplierMilestoneStep4HTMLPr = '';
                         if (typeof buildSupplierMilestoneStageStep4Block === 'function') {
-                            supplierMilestoneStep4HTMLPr = buildSupplierMilestoneStageStep4Block((item.item_id || itemId)) || '';
+                            supplierMilestoneStep4HTMLPr = buildSupplierMilestoneStageStep4Block((item.item_id || itemId), supplierMilestoneSummaryPr) || '';
                         }
                         if (!supplierMilestoneStep4HTMLPr) {
                             supplierMilestoneStep4HTMLPr = renderSupplierMilestonesStep4(supplierMilestoneSummaryPr, (item.item_id || itemId));
@@ -11248,7 +11251,7 @@ class N88_RFQ_Auth {
                     var supplierMilestoneSummary = item.validation_state && item.validation_state.payment_milestones ? item.validation_state.payment_milestones : null;
                     var supplierMilestoneStep4HTML = '';
                     if (typeof buildSupplierMilestoneStageStep4Block === 'function') {
-                        supplierMilestoneStep4HTML = buildSupplierMilestoneStageStep4Block((item.item_id || itemId)) || '';
+                        supplierMilestoneStep4HTML = buildSupplierMilestoneStageStep4Block((item.item_id || itemId), supplierMilestoneSummary) || '';
                     }
                     if (!supplierMilestoneStep4HTML) {
                         supplierMilestoneStep4HTML = renderSupplierMilestonesStep4(supplierMilestoneSummary, (item.item_id || itemId));
@@ -12117,8 +12120,10 @@ class N88_RFQ_Auth {
                             block += '<div id="n88-supplier-step-evidence-form-wrap" style="display: none; margin-top: 12px; padding: 12px; border: 1px solid ' + darkBorder + '; border-radius: 4px; background: #0a0a0a;"></div></div>';
                             return block;
                         }
-                        function buildSupplierMilestoneStageStep4Block(itemId) {
-                            var summary = validationState && validationState.payment_milestones ? validationState.payment_milestones : null;
+                        function buildSupplierMilestoneStageStep4Block(itemId, summaryOverride) {
+                            var summary = summaryOverride && typeof summaryOverride === 'object'
+                                ? summaryOverride
+                                : (validationState && validationState.payment_milestones ? validationState.payment_milestones : null);
                             if (!summary || !summary.enabled || !Array.isArray(summary.stages) || !summary.stages.length) return '';
                             var supplierGuideByStage = {
                                 '4_1_planning': { check: ['Specs, drawings, or scope are clearly defined', 'Materials/components are confirmed and documented', 'No missing or assumed details before starting'], deeper: ['Is everything build-ready or still open to interpretation?', 'Are tolerances, dimensions, and versions fully locked?', 'Did you clarify anything unclear with the buyer?'], tip: 'Do not start production with assumptions - confirm everything first.', actions: ['Upload drawings / specs / concepts', 'Highlight key details or risks', 'Submit for approval before moving forward'] },
@@ -12151,6 +12156,9 @@ class N88_RFQ_Auth {
                                 return stage && stage.stage_label ? String(stage.stage_label) : '';
                             };
                             var supplierStages = Array.isArray(summary.active_stages) ? summary.active_stages : [];
+                            if (!supplierStages.length && Array.isArray(summary.stages)) {
+                                supplierStages = summary.stages.filter(function(st) { return !!(st && st.stage_enabled); });
+                            }
                             if (!supplierStages.length) return '';
                             var nextKey = summary.next_stage_key || '';
                             var hasNextKeyInList = false;
@@ -12161,15 +12169,19 @@ class N88_RFQ_Auth {
                                 }
                             }
                             var activeStageKey = hasNextKeyInList ? String(nextKey) : String((supplierStages[0] && supplierStages[0].stage_key) || '');
-                            var html = '<div style="padding:12px; border:1px solid ' + darkBorder + '; border-radius:6px; background:#0f0f0f;">';
+                            if (typeof window.n88SupplierMilestoneScopeSeq !== 'number') window.n88SupplierMilestoneScopeSeq = 0;
+                            window.n88SupplierMilestoneScopeSeq += 1;
+                            var milestoneScopeUidB = 'n88_ms_' + String(itemId) + '_' + window.n88SupplierMilestoneScopeSeq;
+                            var html = '<div class="n88-supplier-stage-scope" data-stage-scope="1" data-scope-uid="' + escHtml(milestoneScopeUidB) + '" data-item-id="' + String(itemId) + '" style="padding:12px; border:1px solid ' + darkBorder + '; border-radius:6px; background:#0f0f0f;">';
                             html += '<div style="font-size:12px; color:#ddd; margin-bottom:8px;">Submit stage progress with file, meeting link and notes.</div>';
                             html += '<div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px;">';
                             for (var ti = 0; ti < supplierStages.length; ti++) {
                                 var ts = supplierStages[ti] || {};
                                 var tActive = String(ts.stage_key || '') === activeStageKey;
-                                html += '<button class="n88-supplier-stage-tab" data-item-id="' + String(itemId) + '" data-stage-key="' + escHtml(ts.stage_key || '') + '" type="button" onclick="n88SupplierOpenMilestoneStage(' + String(itemId) + ',\'' + escHtml(ts.stage_key || '') + '\')" style="padding:6px 10px; border-radius:4px; border:1px solid ' + (tActive ? green : '#444') + '; background:' + (tActive ? 'rgba(255,0,101,0.12)' : '#111') + '; color:' + (tActive ? green : '#bbb') + '; font-size:11px; cursor:pointer; transition:all 0.2s ease;">' + escHtml(supplierLabel(ts) || ('Stage ' + (ti + 1))) + '</button>';
+                                html += '<button class="n88-supplier-stage-tab" data-item-id="' + String(itemId) + '" data-scope-uid="' + escHtml(milestoneScopeUidB) + '" data-stage-key="' + escHtml(ts.stage_key || '') + '" data-target-card-id="n88-supplier-stage-card-' + String(itemId) + '-' + String(ts.stage_key || '').replace(/[^a-zA-Z0-9_]/g, '_') + '" type="button" onclick="return n88SupplierActivateMilestoneStageTab(this);" style="padding:6px 10px; border-radius:4px; border:1px solid ' + (tActive ? green : '#444') + '; background:' + (tActive ? 'rgba(255,0,101,0.12)' : '#111') + '; color:' + (tActive ? green : '#bbb') + '; font-size:11px; cursor:pointer; transition:all 0.2s ease;">' + escHtml(supplierLabel(ts) || ('Stage ' + (ti + 1))) + '</button>';
                             }
                             html += '</div>';
+                            html += '<div class="n88-supplier-stage-panels">';
                             for (var si = 0; si < supplierStages.length; si++) {
                                 var st = supplierStages[si] || {};
                                 var stKey = st.stage_key || '';
@@ -12177,7 +12189,7 @@ class N88_RFQ_Auth {
                                 var waitingDesigner = !!st.stage_submitted_at && !st.stage_approved_at && st.payment_status !== 'revision_requested';
                                 var canSubmit = !!st.stage_enabled && (isActiveStage || st.payment_status === 'revision_requested') && !waitingDesigner && !st.stage_approved_at;
                                 var statusTxt = st.stage_approved_at ? 'Approved' : (st.stage_submitted_at ? 'Awaiting Approval' : (st.payment_status === 'revision_requested' ? 'Revision Requested' : 'Pending submission'));
-                                html += '<div class="n88-supplier-stage-card" data-item-id="' + String(itemId) + '" data-stage-key="' + escHtml(stKey) + '" style="display:' + (isActiveStage ? 'block' : 'none') + '; margin-bottom:10px; padding:10px; border:1px solid #444; border-radius:6px; background:#0b0b0b;">';
+                                html += '<div id="n88-supplier-stage-card-' + String(itemId) + '-' + String(stKey || '').replace(/[^a-zA-Z0-9_]/g, '_') + '" class="n88-supplier-stage-card" data-item-id="' + String(itemId) + '" data-stage-key="' + escHtml(stKey) + '" style="display:' + (isActiveStage ? 'block' : 'none') + '; margin-bottom:10px; padding:10px; border:1px solid #444; border-radius:6px; background:#0b0b0b;">';
                                 html += '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;"><div style="font-size:12px; color:#fff; font-weight:600;">' + escHtml(supplierLabel(st) || '') + ' (' + Number(st.percent_alloc || 0) + '%)</div><div style="font-size:11px; color:#bbb;">' + escHtml(statusTxt) + '</div></div>';
                                 html += '<div style="display:grid; grid-template-columns:minmax(0,7fr) minmax(220px,3fr); gap:10px; align-items:start;">';
                                 html += '<div style="min-width:0;">';
@@ -12234,8 +12246,9 @@ class N88_RFQ_Auth {
                                 html += '</form>';
                                 html += '</div>';
                                 html += '</div>';
+                                html += '</div>';
                             }
-                            html += '</div>';
+                            html += '</div></div>';
                             return html;
                         }
                         function buildSupplierProposalStepBlock(itemId, sel, statusLabel) {
@@ -12540,7 +12553,7 @@ class N88_RFQ_Auth {
                                 } else if (stepNum === 3) {
                                     detEl.innerHTML = buildSupplierCommitmentStepBlock(itemId, sel, sl);
                                 } else if (stepNum === 4) {
-                                    var milestoneStep4 = buildSupplierMilestoneStageStep4Block(itemId);
+                                    var milestoneStep4 = buildSupplierMilestoneStageStep4Block(itemId, (validationState && validationState.payment_milestones) ? validationState.payment_milestones : null);
                                     if (milestoneStep4) {
                                         detEl.innerHTML = '<div style="font-size: 13px; font-weight: 600; color: #FF0065; margin-bottom: 4px;">' + stepNum + '. ' + (sel.label || '').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>' +
                                             (desc ? '<div style="font-size: 12px; color: #ccc; margin-bottom: 12px; line-height: 1.4;">' + desc.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>' : '') +
@@ -12667,7 +12680,7 @@ class N88_RFQ_Auth {
                                 if (s.expected_by) content += '<div style="font-size: 11px; color: #ccc;">Expected by: ' + s.expected_by + '</div>';
                                 if (desc456) content += '<div style="font-size: 12px; color: #ccc; margin-top: 8px; line-height: 1.4;">' + desc456.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>';
                                 if (stepN === 4) {
-                                    var milestoneStep4Panel = buildSupplierMilestoneStageStep4Block(itemId);
+                                    var milestoneStep4Panel = buildSupplierMilestoneStageStep4Block(itemId, (validationState && validationState.payment_milestones) ? validationState.payment_milestones : null);
                                     content += milestoneStep4Panel ? milestoneStep4Panel : buildSupplierStepEvidenceBlock(s, itemId);
                                 } else {
                                     content += buildSupplierStepEvidenceBlock(s, itemId);
@@ -12708,7 +12721,7 @@ class N88_RFQ_Auth {
                             } else if (stepNum0 === 3) {
                                 detail += buildSupplierCommitmentStepBlock(itemId, sel, statusLabel);
                             } else if (stepNum0 === 4) {
-                            var milestoneStep4Fallback = buildSupplierMilestoneStageStep4Block(itemId);
+                            var milestoneStep4Fallback = buildSupplierMilestoneStageStep4Block(itemId, (validationState && validationState.payment_milestones) ? validationState.payment_milestones : null);
                             if (milestoneStep4Fallback) {
                                 detail += '<div style="font-size: 13px; font-weight: 600; color: ' + green + '; margin-bottom: 4px;">' + stepNum0 + '. ' + (sel.label || '').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>';
                                 if (desc0) detail += '<div style="font-size: 12px; color: ' + darkText + '; margin-top: 8px; line-height: 1.4;">' + desc0.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>';
@@ -17617,28 +17630,49 @@ class N88_RFQ_Auth {
                 }
                 return false;
             };
-            window.n88SupplierOpenMilestoneStage = function(itemId, stageKey) {
+            /**
+             * Supplier milestone tabs: show exactly one panel by element id inside the same wrapper.
+             */
+            window.n88SupplierActivateMilestoneStageTab = function(btn) {
                 try {
-                    var cards = document.querySelectorAll('.n88-supplier-stage-card[data-item-id="' + String(itemId) + '"]');
-                    if (!cards || !cards.length) return false;
-                    for (var i = 0; i < cards.length; i++) {
-                        var card = cards[i];
-                        card.style.display = (card.getAttribute('data-stage-key') === String(stageKey)) ? 'block' : 'none';
+                    if (!btn || !btn.closest) return false;
+                    var scope = btn.closest('.n88-supplier-stage-scope');
+                    if (!scope) return false;
+                    var panelsWrap = scope.querySelector('.n88-supplier-stage-panels');
+                    if (!panelsWrap) return false;
+                    var panelId = btn.getAttribute('data-target-card-id');
+                    var stageKey = String(btn.getAttribute('data-stage-key') || '');
+                    var itemId = String(btn.getAttribute('data-item-id') || '');
+                    if (!panelId || !stageKey) return false;
+                    var siblings = panelsWrap.querySelectorAll('.n88-supplier-stage-card');
+                    for (var ci = 0; ci < siblings.length; ci++) {
+                        siblings[ci].style.display = 'none';
                     }
-                    var tabs = document.querySelectorAll('.n88-supplier-stage-tab[data-item-id="' + String(itemId) + '"]');
-                    for (var t = 0; t < tabs.length; t++) {
-                        var tab = tabs[t];
-                        var isActive = tab.getAttribute('data-stage-key') === String(stageKey);
-                        tab.style.borderColor = isActive ? '#FF0065' : '#444';
-                        tab.style.background = isActive ? 'rgba(255,0,101,0.12)' : '#111';
-                        tab.style.color = isActive ? '#FF0065' : '#bbb';
-                        tab.style.transform = isActive ? 'translateY(-1px)' : 'translateY(0)';
+                    var target = document.getElementById(panelId);
+                    if (target && scope.contains(target)) target.style.display = 'block';
+                    else if (siblings.length) siblings[0].style.display = 'block';
+                    var tabs = scope.querySelectorAll('.n88-supplier-stage-tab');
+                    for (var ti = 0; ti < tabs.length; ti++) {
+                        var tab = tabs[ti];
+                        var sameGroup = !(tab.getAttribute('data-scope-uid')) || tab.getAttribute('data-scope-uid') === btn.getAttribute('data-scope-uid');
+                        if (!sameGroup) continue;
+                        var active = tab.getAttribute('data-target-card-id') === panelId;
+                        tab.style.borderColor = active ? '#FF0065' : '#444';
+                        tab.style.background = active ? 'rgba(255,0,101,0.12)' : '#111';
+                        tab.style.color = active ? '#FF0065' : '#bbb';
+                        tab.style.transform = active ? 'translateY(-1px)' : 'translateY(0)';
                     }
-                    if (typeof window.n88SupplierHydrateStageThreadMessages === 'function') {
+                    if (itemId && stageKey && typeof window.n88SupplierHydrateStageThreadMessages === 'function') {
                         window.n88SupplierHydrateStageThreadMessages(itemId, stageKey);
                     }
                 } catch (e) {
-                    console.error('n88SupplierOpenMilestoneStage error:', e);
+                    console.error('n88SupplierActivateMilestoneStageTab error:', e);
+                }
+                return false;
+            };
+            window.n88SupplierOpenMilestoneStage = function(itemId, stageKey, triggerEl) {
+                if (triggerEl && typeof window.n88SupplierActivateMilestoneStageTab === 'function') {
+                    return window.n88SupplierActivateMilestoneStageTab(triggerEl);
                 }
                 return false;
             };
