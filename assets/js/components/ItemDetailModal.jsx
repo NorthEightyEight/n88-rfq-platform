@@ -2460,6 +2460,12 @@ const ItemDetailModal = ({ item, isOpen, onClose, onSave, boardId = null, priceR
     const [revisionNotesByStage, setRevisionNotesByStage] = React.useState({});
     const [milestoneActionBusyByStage, setMilestoneActionBusyByStage] = React.useState({});
     const [milestoneActionTypeByStage, setMilestoneActionTypeByStage] = React.useState({});
+    /** Direct designer↔supplier Step-4 + milestone-tagged messages (Item modal; board admin has separate bucket). */
+    const [milestoneDsMessages, setMilestoneDsMessages] = React.useState([]);
+    const [milestoneDsMessagesLoading, setMilestoneDsMessagesLoading] = React.useState(false);
+    const [milestoneStageCommDraft, setMilestoneStageCommDraft] = React.useState({});
+    const [milestoneStageCommSending, setMilestoneStageCommSending] = React.useState({});
+    const [milestoneStageCommFiles, setMilestoneStageCommFiles] = React.useState({});
     // Commit 3.A.2S: Designer view of supplier step evidence (View Step Evidence)
     const [supplierStepEvidenceView, setSupplierStepEvidenceView] = React.useState(null);
     const [supplierStepEvidenceLoading, setSupplierStepEvidenceLoading] = React.useState(false);
@@ -2470,6 +2476,8 @@ const ItemDetailModal = ({ item, isOpen, onClose, onSave, boardId = null, priceR
     const [evidenceCommentSubmitting, setEvidenceCommentSubmitting] = React.useState(false);
     // When designer requests CAD revision or approves CAD, keep tab on Mission Spec (details) instead of switching to Proposals
     const skipNextTabSwitchFromCadActionRef = React.useRef(false);
+    // Image lightbox state (must stay above effects — hooks order)
+    const [lightboxImage, setLightboxImage] = React.useState(null);
     
     // Auto-select first bid when form opens with single bid (Commit 2.3.9.1B)
     React.useEffect(() => {
@@ -2478,9 +2486,13 @@ const ItemDetailModal = ({ item, isOpen, onClose, onSave, boardId = null, priceR
         }
     }, [showCadPrototypeForm, itemState.bids, selectedBidId]);
     
+    /** First RFQ payload landed — defer n88_get_item_messages until after n88_get_item_rfq_state (uses item entry_mode + loaded flags; initialIsProductionOnly matches tab default) */
+    const rfqBootstrapReady = initialIsProductionOnly ? !!loadedSections.workflow : !!loadedSections.summary;
+
     // Auto-expand bids and set tab: CAD/messages → Step 2; CAD released or video submitted → Step 3; payment approved → Step 1 (synced with admin.php)
     React.useEffect(() => {
-        if (itemState.loading) return;
+        if (!isOpen) return;
+        if (itemState.loading || !rfqBootstrapReady) return;
         // Production tracking: default tab is workflow (useState); do not auto-switch tabs — user can open Item Specification
         if (isProductionOnly) return;
         if (skipNextTabSwitchFromCadActionRef.current) {
@@ -2534,25 +2546,22 @@ const ItemDetailModal = ({ item, isOpen, onClose, onSave, boardId = null, priceR
             setActiveTab('details');
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- loadDesignerMessages is defined later; effect correctly runs when action_required/unread/CAD-pending or itemState change
-    }, [isProductionOnly, itemState.loading, currentState, itemState.has_bids, itemState.bids, itemState.has_unread_operator_messages, itemState.has_prototype_payment, itemState.prototype_payment_status, itemState.cad_current_version, itemState.cad_status, itemState.cad_released_to_supplier_at, itemState.prototype_submission, itemState.prototype_status, item?.action_required, item?.has_unread_operator_messages]);
+    }, [isOpen, isProductionOnly, itemState.loading, rfqBootstrapReady, currentState, itemState.has_bids, itemState.bids, itemState.has_unread_operator_messages, itemState.has_prototype_payment, itemState.prototype_payment_status, itemState.cad_current_version, itemState.cad_status, itemState.cad_released_to_supplier_at, itemState.prototype_submission, itemState.prototype_status, item?.action_required, item?.has_unread_operator_messages]);
 
     // When opened from card Support link: switch to Item Spec tab and open Support (messages) box
     React.useEffect(() => {
         if (isProductionOnly) return;
-        if (isOpen && openToDetailsAndSupport) {
-            setActiveTab('details');
-            setShowDesignerMessageForm(true);
-            loadDesignerMessages();
-            const scrollToSupport = () => {
-                const el = document.getElementById('n88-item-spec-support-box');
-                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            };
-            setTimeout(scrollToSupport, 300);
-        }
-    }, [isOpen, openToDetailsAndSupport, isProductionOnly]);
-    
-    // Image lightbox state
-    const [lightboxImage, setLightboxImage] = React.useState(null);
+        if (!isOpen || !openToDetailsAndSupport) return;
+        if (itemState.loading || !rfqBootstrapReady) return;
+        setActiveTab('details');
+        setShowDesignerMessageForm(true);
+        loadDesignerMessages();
+        const scrollToSupport = () => {
+            const el = document.getElementById('n88-item-spec-support-box');
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        };
+        setTimeout(scrollToSupport, 300);
+    }, [isOpen, openToDetailsAndSupport, isProductionOnly, itemState.loading, rfqBootstrapReady]);
     
     // Get item ID - extract numeric ID from "item-87" format or use direct ID
     const getItemId = () => {
@@ -2830,10 +2839,12 @@ const ItemDetailModal = ({ item, isOpen, onClose, onSave, boardId = null, priceR
         }
     }, []);
     React.useEffect(() => {
-        if (activeTab === 'workflow' && itemId && !timelineData && !timelineLoading && !timelineError) {
-            fetchTimeline();
-        }
-    }, [activeTab, itemId, timelineData, timelineLoading, timelineError, fetchTimeline]);
+        if (!isOpen || !itemId) return;
+        if (activeTab !== 'workflow') return;
+        if (!loadedSections.workflow) return;
+        if (timelineData || timelineLoading || timelineError) return;
+        fetchTimeline();
+    }, [isOpen, activeTab, itemId, loadedSections.workflow, timelineData, timelineLoading, timelineError, fetchTimeline]);
     const fetchMilestoneSummary = React.useCallback(async () => {
         if (!itemId) return null;
         const nonce = window.n88BoardNonce?.nonce_get_item_rfq_state || window.n88BoardData?.nonce || window.n88?.nonce || '';
@@ -2921,6 +2932,138 @@ const ItemDetailModal = ({ item, isOpen, onClose, onSave, boardId = null, priceR
         }
         return null;
     }, [itemId, milestoneDetailsByStage]);
+
+    const resolveAwardedSupplierUserId = React.useCallback(() => {
+        const bids = itemState.bids || [];
+        const aw = bids.find((b) => {
+            if (!b) return false;
+            if (b.is_awarded === true || b.is_awarded === 1 || b.is_awarded === '1') return true;
+            const st = String(b.status || b.bid_status || '').toLowerCase();
+            return st === 'awarded';
+        });
+        if (aw) {
+            const sid = aw.supplier_id != null ? aw.supplier_id : (aw.supplier_user_id != null ? aw.supplier_user_id : aw.user_id);
+            if (sid != null && String(sid).trim() !== '') {
+                return String(sid);
+            }
+        }
+        const ps = itemState.prototype_payment_supplier_id;
+        if (ps != null && String(ps).trim() !== '') {
+            return String(ps);
+        }
+        return '';
+    }, [itemState.bids, itemState.prototype_payment_supplier_id]);
+
+    const loadMilestoneDesignerSupplierMessages = React.useCallback(async () => {
+        if (!itemId || !itemState.has_awarded_bid) return;
+        const ajaxUrl = window.n88BoardData?.ajaxUrl || window.n88?.ajaxUrl || '/wp-admin/admin-ajax.php';
+        const nonce = window.n88BoardNonce?.nonce_get_item_messages || window.n88BoardNonce?.nonce || window.n88BoardData?.nonce || window.n88?.nonce || '';
+        if (!nonce) {
+            console.error('[N88] loadMilestoneDesignerSupplierMessages: missing nonce (nonce_get_item_messages)');
+            return;
+        }
+        setMilestoneDsMessagesLoading(true);
+        try {
+            const supplierHint = resolveAwardedSupplierUserId();
+            const fd = new FormData();
+            fd.append('action', 'n88_get_item_messages');
+            fd.append('item_id', String(itemId));
+            fd.append('thread_type', 'designer_supplier');
+            // Single request: server includes rows in step_4_milestones plus legacy [STAGE:…] rows stored under step_4_production.
+            fd.append('context_type', 'step_4_milestones');
+            if (supplierHint) {
+                const hintTrim = String(supplierHint).trim();
+                const asNum = parseInt(hintTrim, 10);
+                if (!Number.isNaN(asNum) && String(asNum) === hintTrim) {
+                    fd.append('supplier_id', String(asNum));
+                } else {
+                    fd.append('supplier_email', hintTrim);
+                }
+            }
+            fd.append('_ajax_nonce', nonce);
+            const res = await fetch(ajaxUrl, { method: 'POST', body: fd });
+            let parsed = null;
+            try {
+                parsed = JSON.parse(await res.text());
+            } catch (e) {
+                parsed = null;
+            }
+            const raw = parsed && parsed.success && parsed.data && Array.isArray(parsed.data.messages) ? parsed.data.messages : [];
+            raw.sort((x, y) => {
+                const xt = x && x.created_at ? Date.parse(x.created_at) || 0 : 0;
+                const yt = y && y.created_at ? Date.parse(y.created_at) || 0 : 0;
+                if (xt !== yt) return xt - yt;
+                return (parseInt(x && x.message_id, 10) || 0) - (parseInt(y && y.message_id, 10) || 0);
+            });
+            setMilestoneDsMessages(raw);
+        } catch (e) {
+            console.error('loadMilestoneDesignerSupplierMessages', e);
+            setMilestoneDsMessages([]);
+        } finally {
+            setMilestoneDsMessagesLoading(false);
+        }
+    }, [itemId, itemState.has_awarded_bid, resolveAwardedSupplierUserId]);
+
+    const sendMilestoneStageSupplierMessage = React.useCallback(async (stageKey) => {
+        const skey = String(stageKey || '').trim();
+        if (!itemId || !skey || !itemState.has_awarded_bid) return false;
+        const supplierId = resolveAwardedSupplierUserId();
+        const draft = String(milestoneStageCommDraft[skey] || '').trim();
+        if (!draft) {
+            alert('Please enter a message.');
+            return false;
+        }
+        const nonce = window.n88BoardNonce?.nonce_send_item_message || window.n88BoardNonce?.nonce || window.n88BoardData?.nonce || window.n88?.nonce || '';
+        const ajaxUrl = window.n88BoardData?.ajaxUrl || window.n88?.ajaxUrl || '/wp-admin/admin-ajax.php';
+        if (!nonce) return false;
+        const composed = `[STAGE:${skey}]\n\n${draft}`;
+        setMilestoneStageCommSending((prev) => ({ ...prev, [skey]: true }));
+        try {
+            const fd = new FormData();
+            fd.append('action', 'n88_send_item_message');
+            fd.append('item_id', String(itemId));
+            fd.append('thread_type', 'designer_supplier');
+            fd.append('context_type', 'step_4_milestones');
+            fd.append('message_text', composed);
+            if (supplierId) {
+                const sidTrim = String(supplierId).trim();
+                const asNum = parseInt(sidTrim, 10);
+                if (!Number.isNaN(asNum) && String(asNum) === sidTrim) {
+                    fd.append('supplier_id', String(asNum));
+                } else {
+                    fd.append('supplier_email', sidTrim);
+                }
+            }
+            fd.append('_ajax_nonce', nonce);
+            const files = milestoneStageCommFiles[skey];
+            if (Array.isArray(files) && files.length) {
+                files.forEach((f) => fd.append('message_attachments[]', f));
+            }
+            const res = await fetch(ajaxUrl, { method: 'POST', body: fd });
+            let data = null;
+            try {
+                data = JSON.parse(await res.text());
+            } catch (err) {
+                data = null;
+            }
+            if (data && data.success) {
+                setMilestoneStageCommDraft((prev) => ({ ...prev, [skey]: '' }));
+                setMilestoneStageCommFiles((prev) => ({ ...prev, [skey]: [] }));
+                const fin = document.getElementById(`n88-modal-milestone-files-${skey}`);
+                if (fin) fin.value = '';
+                await loadMilestoneDesignerSupplierMessages();
+                return true;
+            }
+            alert((data && data.data && data.data.message) ? data.data.message : 'Failed to send message.');
+            return false;
+        } catch (err) {
+            alert('Failed to send message.');
+            return false;
+        } finally {
+            setMilestoneStageCommSending((prev) => ({ ...prev, [skey]: false }));
+        }
+    }, [itemId, itemState.has_awarded_bid, milestoneStageCommDraft, milestoneStageCommFiles, resolveAwardedSupplierUserId, loadMilestoneDesignerSupplierMessages]);
+
     const runMilestoneAction = React.useCallback(async (stageKey, actionName, appendFields = null) => {
         if (!itemId || !stageKey || !actionName) return false;
         const nonce = window.n88BoardNonce?.nonce_get_item_rfq_state || window.n88BoardData?.nonce || window.n88?.nonce || '';
@@ -2948,6 +3091,7 @@ const ItemDetailModal = ({ item, isOpen, onClose, onSave, boardId = null, priceR
             });
             await fetchMilestoneSummary();
             if (typeof fetchItemState === 'function') await fetchItemState();
+            await loadMilestoneDesignerSupplierMessages();
             if (typeof onSave === 'function') await onSave(itemId, {});
             try { window.dispatchEvent(new CustomEvent('n88-board-refresh-status')); } catch (e) {}
             return true;
@@ -2959,7 +3103,14 @@ const ItemDetailModal = ({ item, isOpen, onClose, onSave, boardId = null, priceR
             setMilestoneActionBusyByStage((prev) => ({ ...prev, [stageKey]: false }));
             setMilestoneActionTypeByStage((prev) => ({ ...prev, [stageKey]: '' }));
         }
-    }, [itemId, fetchMilestoneSummary]);
+    }, [itemId, fetchMilestoneSummary, loadMilestoneDesignerSupplierMessages]);
+
+    React.useLayoutEffect(() => {
+        if (!isOpen || !expandedMilestoneStage || milestoneDsMessagesLoading) return;
+        const wrap = document.getElementById(`n88-milestone-stage-chat-scroll-${expandedMilestoneStage}`);
+        if (wrap) wrap.scrollTop = wrap.scrollHeight;
+    }, [isOpen, expandedMilestoneStage, milestoneDsMessages, milestoneDsMessagesLoading]);
+
     React.useEffect(() => {
         if (!isOpen || activeTab !== 'workflow' || !itemId || !itemState.has_awarded_bid || milestoneSummaryLoading) return;
         if (itemState.payment_milestones_summary && typeof itemState.payment_milestones_summary === 'object') return;
@@ -8663,6 +8814,7 @@ const ItemDetailModal = ({ item, isOpen, onClose, onSave, boardId = null, priceR
                                                                                                         }
                                                                                                         setExpandedMilestoneStage(stageKey);
                                                                                                         await fetchMilestoneStageDetails(stageKey);
+                                                                                                        await loadMilestoneDesignerSupplierMessages();
                                                                                                     }}
                                                                                                     style={{ width: '100%', textAlign: 'left', padding: '10px', background: '#111', color: '#ddd', border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', gap: '8px' }}
                                                                                                 >
@@ -8789,6 +8941,104 @@ const ItemDetailModal = ({ item, isOpen, onClose, onSave, boardId = null, priceR
                                                                                                                 )}
                                                                                                             </div>
                                                                                                         )}
+                                                                                                        {(() => {
+                                                                                                            const stageTag = `[STAGE:${stageKey}]`;
+                                                                                                            const stageThread = milestoneDsMessages.filter((m) => String(m?.message_text || '').startsWith(stageTag));
+                                                                                                            const stageThreadSorted = stageThread.slice().sort((a, b) => {
+                                                                                                                const ta = a?.created_at ? Date.parse(a.created_at) || 0 : 0;
+                                                                                                                const tb = b?.created_at ? Date.parse(b.created_at) || 0 : 0;
+                                                                                                                if (ta !== tb) return ta - tb;
+                                                                                                                return (parseInt(String(a?.message_id || 0), 10) || 0) - (parseInt(String(b?.message_id || 0), 10) || 0);
+                                                                                                            });
+                                                                                                            const stripStageTag = (text) => {
+                                                                                                                const s = String(text || '');
+                                                                                                                if (!s.startsWith(stageTag)) return s.trim();
+                                                                                                                return s.slice(stageTag.length).replace(/^\s*\n*/, '').trim();
+                                                                                                            };
+                                                                                                            const parseAtt = (raw) => {
+                                                                                                                if (!raw) return [];
+                                                                                                                try {
+                                                                                                                    const p = typeof raw === 'string' ? JSON.parse(raw) : raw;
+                                                                                                                    return Array.isArray(p) ? p : [];
+                                                                                                                } catch (e) {
+                                                                                                                    return [];
+                                                                                                                }
+                                                                                                            };
+                                                                                                            return (
+                                                                                                                <div style={{ borderTop: `1px solid ${darkBorder}`, paddingTop: '10px', marginTop: '10px' }}>
+                                                                                                                    <div style={{ marginBottom: '8px', color: '#ddd', fontWeight: 600 }}>Stage chat (supplier)</div>
+                                                                                                                    {milestoneDsMessagesLoading && stageThreadSorted.length === 0 ? (
+                                                                                                                        <div style={{ color: '#888', marginBottom: '8px' }}>Loading messages…</div>
+                                                                                                                    ) : null}
+                                                                                                                    {stageThreadSorted.length === 0 && !milestoneDsMessagesLoading ? (
+                                                                                                                        <div style={{ color: '#777', marginBottom: '8px', fontStyle: 'italic' }}>No messages for this stage yet.</div>
+                                                                                                                    ) : (
+                                                                                                                        <div
+                                                                                                                            id={`n88-milestone-stage-chat-scroll-${stageKey}`}
+                                                                                                                            style={{ maxHeight: '200px', overflowY: 'auto', marginBottom: '10px', padding: '8px', background: '#101010', borderRadius: '4px', border: `1px solid ${darkBorder}`, display: 'flex', flexDirection: 'column', gap: '6px' }}
+                                                                                                                        >
+                                                                                                                            {stageThreadSorted.map((m) => {
+                                                                                                                                const att = parseAtt(m.message_attachments);
+                                                                                                                                const isMine = String(m.sender_role || '') === 'designer';
+                                                                                                                                const who = m.sender_role === 'supplier' ? 'Supplier' : isMine ? 'You' : (m.sender_name || 'User');
+                                                                                                                                const bubbleBg = isMine ? 'rgba(255,0,101,0.14)' : '#171717';
+                                                                                                                                return (
+                                                                                                                                    <div key={m.message_id || `${m.created_at}-${who}`} style={{ display: 'flex', justifyContent: isMine ? 'flex-end' : 'flex-start' }}>
+                                                                                                                                        <div style={{ maxWidth: '88%', padding: '8px 10px', borderRadius: '10px', border: `1px solid ${darkBorder}`, background: bubbleBg, textAlign: isMine ? 'right' : 'left' }}>
+                                                                                                                                            <div style={{ fontSize: '10px', color: '#888' }}>
+                                                                                                                                                {who}
+                                                                                                                                                {m.created_at ? ` · ${new Date(m.created_at).toLocaleString()}` : ''}
+                                                                                                                                            </div>
+                                                                                                                                            <div style={{ color: '#e0e0e0', whiteSpace: 'pre-wrap', wordBreak: 'break-word', marginTop: '4px', textAlign: 'left' }}>
+                                                                                                                                                {stripStageTag(m.message_text)}
+                                                                                                                                            </div>
+                                                                                                                                            {att.length > 0 && (
+                                                                                                                                                <div style={{ marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: isMine ? 'flex-end' : 'flex-start' }}>
+                                                                                                                                                    {att.map((a, ai) => (
+                                                                                                                                                        <a key={`att-${m.message_id}-${ai}`} href={a.url || '#'} target="_blank" rel="noopener noreferrer" style={{ color: greenAccent, fontSize: '11px' }}>
+                                                                                                                                                            {a.name || 'Attachment'}
+                                                                                                                                                        </a>
+                                                                                                                                                    ))}
+                                                                                                                                                </div>
+                                                                                                                                            )}
+                                                                                                                                        </div>
+                                                                                                                                    </div>
+                                                                                                                                );
+                                                                                                                            })}
+                                                                                                                        </div>
+                                                                                                                    )}
+                                                                                                                    {!isOperator && (
+                                                                                                                        <div style={{ marginTop: '8px' }}>
+                                                                                                                            <textarea
+                                                                                                                                rows={2}
+                                                                                                                                placeholder="Message the supplier about this stage…"
+                                                                                                                                value={milestoneStageCommDraft[stageKey] || ''}
+                                                                                                                                onChange={(e) => setMilestoneStageCommDraft((prev) => ({ ...prev, [stageKey]: e.target.value }))}
+                                                                                                                                style={{ width: '100%', background: '#111', color: '#ddd', border: `1px solid ${darkBorder}`, borderRadius: '4px', padding: '6px', marginBottom: '6px', fontSize: '11px' }}
+                                                                                                                            />
+                                                                                                                            <input
+                                                                                                                                id={`n88-modal-milestone-files-${stageKey}`}
+                                                                                                                                type="file"
+                                                                                                                                multiple
+                                                                                                                                onChange={(e) => {
+                                                                                                                                    const fl = e.target.files ? Array.from(e.target.files) : [];
+                                                                                                                                    setMilestoneStageCommFiles((prev) => ({ ...prev, [stageKey]: fl }));
+                                                                                                                                }}
+                                                                                                                                style={{ marginBottom: '6px', fontSize: '11px', color: '#ccc', maxWidth: '100%' }}
+                                                                                                                            />
+                                                                                                                            <button
+                                                                                                                                type="button"
+                                                                                                                                disabled={!!milestoneStageCommSending[stageKey]}
+                                                                                                                                onClick={() => sendMilestoneStageSupplierMessage(stageKey)}
+                                                                                                                                style={{ padding: '6px 10px', fontSize: '11px', background: greenAccent, color: '#000', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: '600' }}
+                                                                                                                            >
+                                                                                                                                {milestoneStageCommSending[stageKey] ? 'Sending…' : 'Send to supplier'}
+                                                                                                                            </button>
+                                                                                                                        </div>
+                                                                                                                    )}
+                                                                                                                </div>
+                                                                                                            );
+                                                                                                        })()}
                                                                                                     </div>
                                                                                                 )}
                                                                                             </div>

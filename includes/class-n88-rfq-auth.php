@@ -1030,10 +1030,30 @@ class N88_RFQ_Auth {
         );
     }
 
-    private function get_payment_milestone_rows( $item_id ) {
+    /**
+     * @param int  $item_id Item ID.
+     * @param bool $lite    When true, omit LONGTEXT-heavy columns (e.g. submission history) — use for summaries and caches; expanded stage details stay on ajax_get_payment_milestone_stage_details.
+     * @return array<int, array<string, mixed>>
+     */
+    private function get_payment_milestone_rows( $item_id, $lite = false ) {
         global $wpdb;
         $this->ensure_payment_milestone_support();
         $table = $wpdb->prefix . 'n88_payment_milestones';
+        if ( $lite ) {
+            return $wpdb->get_results(
+                $wpdb->prepare(
+                    "SELECT milestone_id, item_id, stage_key, stage_label, sort_order, percent_alloc, amount_alloc,
+                        payment_required, stage_enabled, stage_meeting_link, stage_submitted_at, stage_approved_at,
+                        stage_revision_requested_at, stage_revision_note, payment_note, payment_method,
+                        payment_attachment_id, payment_submitted_at, payment_confirmed_at, payment_status
+                    FROM {$table}
+                    WHERE item_id = %d
+                    ORDER BY sort_order ASC, milestone_id ASC",
+                    absint( $item_id )
+                ),
+                ARRAY_A
+            );
+        }
         return $wpdb->get_results(
             $wpdb->prepare(
                 "SELECT *
@@ -1046,8 +1066,47 @@ class N88_RFQ_Auth {
         );
     }
 
-    private function build_payment_milestone_summary( $item_id ) {
-        $rows = $this->get_payment_milestone_rows( $item_id );
+    /**
+     * Prime attachment posts in one shot to reduce N+1 queries from wp_get_attachment_url() in summaries.
+     *
+     * @param array<int, array<string, mixed>> $rows Milestone rows.
+     */
+    private function prime_payment_milestone_attachment_posts( array $rows ) {
+        $ids = array();
+        foreach ( $rows as $row ) {
+            if ( empty( $row['payment_attachment_id'] ) ) {
+                continue;
+            }
+            $ids[] = absint( $row['payment_attachment_id'] );
+        }
+        $ids = array_values( array_unique( array_filter( $ids ) ) );
+        if ( empty( $ids ) || ! function_exists( 'wp_prime_post_caches' ) ) {
+            return;
+        }
+        wp_prime_post_caches( $ids, false, false );
+    }
+
+    /**
+     * Clear cached payload for ajax_get_payment_milestone_summary().
+     *
+     * @param int $item_id Item ID.
+     */
+    private function invalidate_payment_milestone_summary_cache( $item_id ) {
+        $item_id = absint( $item_id );
+        if ( $item_id < 1 ) {
+            return;
+        }
+        delete_transient( 'n88_pm_sum_' . $item_id );
+    }
+
+    /**
+     * @param int                                  $item_id Item ID.
+     * @param array{lite_rowset?:bool}             $args    lite_rowset: skip LOAD of submission history blobs (recommended for summaries + GET cache).
+     * @return array<string, mixed>
+     */
+    private function build_payment_milestone_summary( $item_id, $args = array() ) {
+        $lite = ! empty( $args['lite_rowset'] );
+        $rows = $this->get_payment_milestone_rows( $item_id, $lite );
         if ( empty( $rows ) ) {
             return array(
                 'enabled' => false,
@@ -1057,6 +1116,8 @@ class N88_RFQ_Auth {
                 'stages' => array(),
             );
         }
+
+        $this->prime_payment_milestone_attachment_posts( $rows );
 
         $stages = array();
         $active_stages = array();
@@ -1084,7 +1145,7 @@ class N88_RFQ_Auth {
                 'payment_status'       => isset( $row['payment_status'] ) ? sanitize_key( $row['payment_status'] ) : 'not_submitted',
                 'stage_meeting_link'   => isset( $row['stage_meeting_link'] ) ? esc_url_raw( $row['stage_meeting_link'] ) : '',
                 'stage_revision_note'  => isset( $row['stage_revision_note'] ) ? sanitize_textarea_field( $row['stage_revision_note'] ) : '',
-                'stage_submission_history' => $this->normalize_milestone_submission_history( isset( $row['stage_submission_history'] ) ? $row['stage_submission_history'] : '' ),
+                'stage_submission_history' => $lite ? array() : $this->normalize_milestone_submission_history( isset( $row['stage_submission_history'] ) ? $row['stage_submission_history'] : '' ),
                 'stage_submitted_at'   => ! empty( $row['stage_submitted_at'] ) ? $row['stage_submitted_at'] : null,
                 'stage_approved_at'    => ! empty( $row['stage_approved_at'] ) ? $row['stage_approved_at'] : null,
                 'stage_revision_requested_at' => ! empty( $row['stage_revision_requested_at'] ) ? $row['stage_revision_requested_at'] : null,
@@ -17440,7 +17501,10 @@ class N88_RFQ_Auth {
                 var list = [];
                 Object.keys(byId).forEach(function(mid) { list.push(byId[mid]); });
                 list.sort(function(a, b) {
-                    return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+                    var da = new Date(a.created_at || 0).getTime();
+                    var db = new Date(b.created_at || 0).getTime();
+                    if (da !== db) return da - db;
+                    return (parseInt(a.message_id, 10) || 0) - (parseInt(b.message_id, 10) || 0);
                 });
                 var stageTag = '[STAGE:' + stageKey + ']';
                 if (!list.length) {
@@ -17459,7 +17523,8 @@ class N88_RFQ_Auth {
                         var att = m.message_attachments ? (typeof m.message_attachments === 'string' ? JSON.parse(m.message_attachments) : m.message_attachments) : null;
                         if (Array.isArray(att)) attachments = att;
                     } catch (e2) {}
-                    html += '<div style="margin-bottom:8px;padding:6px;background:' + rowBg + ';border:1px solid #2a2a2a;border-radius:4px;text-align:' + (isMine ? 'right' : 'left') + '">';
+                    html += '<div style="margin-bottom:8px;display:flex;justify-content:' + (isMine ? 'flex-end' : 'flex-start') + '">';
+                    html += '<div style="max-width:88%;padding:8px;background:' + rowBg + ';border:1px solid #2a2a2a;border-radius:10px;text-align:' + (isMine ? 'right' : 'left') + '">';
                     html += '<div style="font-size:10px;color:#999;margin-bottom:4px;">' + window.n88SupplierStageThreadEscapeHtml(String(m.created_at || '')) + ' — ' + (isMine ? 'You' : 'Designer') + '</div>';
                     html += '<div style="font-size:11px;color:#ddd;white-space:pre-wrap;display:inline-block;max-width:100%;text-align:left">' + window.n88SupplierStageThreadEscapeHtml(bodyDisplay || '(message)') + '</div>';
                     if (attachments.length) {
@@ -17475,7 +17540,7 @@ class N88_RFQ_Auth {
                         }
                         html += '</div>';
                     }
-                    html += '</div>';
+                    html += '</div></div>';
                 }
                 root.innerHTML = html;
             };
@@ -17536,7 +17601,14 @@ class N88_RFQ_Auth {
                             st.byId[mid] = m;
                         }
                         window.n88SupplierStageThreadStore[key] = st;
+                        var prevH = root.scrollHeight;
+                        var prevT = root.scrollTop;
                         window.n88SupplierRenderStageThreadFromStore(itemId, stageKey);
+                        if (reset) {
+                            root.scrollTop = root.scrollHeight;
+                        } else {
+                            root.scrollTop = Math.max(0, root.scrollHeight - prevH + prevT);
+                        }
                         if (btn) {
                             btn.disabled = !st.hasMore;
                             btn.style.opacity = st.hasMore ? 1 : 0.45;
@@ -22834,7 +22906,12 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
             $supplier_files = $this->sanitize_validation_attachment_entries( $supplier['files'] );
         }
 
-        $payment_milestone_summary = $this->build_payment_milestone_summary( $item_id );
+        $payment_milestone_summary = $this->build_payment_milestone_summary(
+            $item_id,
+            array(
+                'lite_rowset' => true,
+            )
+        );
         $has_payment_milestones = ! empty( $payment_milestone_summary['enabled'] );
         if ( $can_commit && $has_payment_milestones ) {
             $next_stage = array();
@@ -24149,10 +24226,21 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
             wp_send_json_error( array( 'message' => 'No valid item IDs provided.' ), 400 );
         }
 
-        $skip_timeline = false;
+        // Timeline payload is expensive (per-item get_item_timeline_payload). Omit by default — board cards and batch loads use n88_get_item_timeline only when a detail view needs it. Opt in with include_timeline=1 or skip_timeline=0.
+        $skip_timeline = true;
+        if ( isset( $_POST['include_timeline'] ) ) {
+            $itv = wp_unslash( $_POST['include_timeline'] );
+            if ( '1' === (string) $itv || 1 === $itv || true === $itv ) {
+                $skip_timeline = false;
+            }
+        }
         if ( isset( $_POST['skip_timeline'] ) ) {
             $stv = wp_unslash( $_POST['skip_timeline'] );
-            $skip_timeline = ( '1' === (string) $stv || 1 === $stv || true === $stv );
+            if ( '1' === (string) $stv || 1 === $stv || true === $stv ) {
+                $skip_timeline = true;
+            } elseif ( '0' === (string) $stv || 0 === $stv ) {
+                $skip_timeline = false;
+            }
         }
         $states = $this->get_compact_item_rfq_state_batch( $item_ids, $current_user, $is_designer, $is_system_operator, $is_admin, array( 'skip_timeline' => $skip_timeline ) );
 
@@ -34222,7 +34310,26 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
             wp_send_json_error( array( 'message' => 'Invalid item id.' ), 400 );
             return;
         }
-        $summary = $this->build_payment_milestone_summary( $item_id );
+
+        $cache_ttl = (int) apply_filters( 'n88_payment_milestone_summary_cache_ttl', 120, $item_id );
+        if ( $cache_ttl > 0 ) {
+            $cache_key = 'n88_pm_sum_' . $item_id;
+            $cached    = get_transient( $cache_key );
+            if ( is_array( $cached ) && array_key_exists( 'enabled', $cached ) ) {
+                wp_send_json_success( $cached );
+                return;
+            }
+        }
+
+        $summary = $this->build_payment_milestone_summary(
+            $item_id,
+            array(
+                'lite_rowset' => true,
+            )
+        );
+        if ( $cache_ttl > 0 ) {
+            set_transient( 'n88_pm_sum_' . $item_id, $summary, $cache_ttl );
+        }
         wp_send_json_success( $summary );
     }
 
@@ -34238,17 +34345,25 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
             wp_send_json_error( array( 'message' => 'Invalid parameters.' ), 400 );
             return;
         }
-        $rows = $this->get_payment_milestone_rows( $item_id );
-        foreach ( (array) $rows as $row ) {
-            if ( isset( $row['stage_key'] ) && sanitize_key( $row['stage_key'] ) === $stage_key ) {
-                $payment_attachment_id = isset( $row['payment_attachment_id'] ) ? absint( $row['payment_attachment_id'] ) : 0;
-                $stage_attachment_id = isset( $row['stage_proof_attachment_id'] ) ? absint( $row['stage_proof_attachment_id'] ) : 0;
-                $row['payment_attachment_url'] = $payment_attachment_id ? esc_url_raw( wp_get_attachment_url( $payment_attachment_id ) ) : '';
-                $row['stage_proof_attachment_url'] = $stage_attachment_id ? esc_url_raw( wp_get_attachment_url( $stage_attachment_id ) ) : '';
-                $row['stage_submission_history'] = $this->normalize_milestone_submission_history( isset( $row['stage_submission_history'] ) ? $row['stage_submission_history'] : '' );
-                wp_send_json_success( $row );
-                return;
-            }
+        $this->ensure_payment_milestone_support();
+        global $wpdb;
+        $table = $wpdb->prefix . 'n88_payment_milestones';
+        $row   = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT * FROM {$table} WHERE item_id = %d AND stage_key = %s LIMIT 1",
+                $item_id,
+                $stage_key
+            ),
+            ARRAY_A
+        );
+        if ( $row && isset( $row['milestone_id'] ) ) {
+            $payment_attachment_id = isset( $row['payment_attachment_id'] ) ? absint( $row['payment_attachment_id'] ) : 0;
+            $stage_attachment_id     = isset( $row['stage_proof_attachment_id'] ) ? absint( $row['stage_proof_attachment_id'] ) : 0;
+            $row['payment_attachment_url']       = $payment_attachment_id ? esc_url_raw( wp_get_attachment_url( $payment_attachment_id ) ) : '';
+            $row['stage_proof_attachment_url']   = $stage_attachment_id ? esc_url_raw( wp_get_attachment_url( $stage_attachment_id ) ) : '';
+            $row['stage_submission_history']     = $this->normalize_milestone_submission_history( isset( $row['stage_submission_history'] ) ? $row['stage_submission_history'] : '' );
+            wp_send_json_success( $row );
+            return;
         }
         wp_send_json_error( array( 'message' => 'Stage milestone not found.' ), 404 );
     }
@@ -34289,6 +34404,7 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
 
         if ( ! $enabled ) {
             $wpdb->delete( $table, array( 'item_id' => $item_id ), array( '%d' ) );
+            $this->invalidate_payment_milestone_summary_cache( $item_id );
             wp_send_json_success( $this->build_payment_milestone_summary( $item_id ) );
             return;
         }
@@ -34397,6 +34513,7 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
             'payload_json'=> array( 'locked_stage_count' => max( 0, count( $normalized ) - 1 ) ),
         ) );
 
+        $this->invalidate_payment_milestone_summary_cache( $item_id );
         wp_send_json_success( $this->build_payment_milestone_summary( $item_id ) );
     }
 
@@ -34461,6 +34578,7 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
             'item_id'     => $item_id,
             'payload_json'=> array( 'stage_key' => $stage_key ),
         ) );
+        $this->invalidate_payment_milestone_summary_cache( $item_id );
         wp_send_json_success( $this->build_payment_milestone_summary( $item_id ) );
     }
 
@@ -34543,6 +34661,7 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
             'item_id'     => $item_id,
             'payload_json'=> array( 'stage_key' => $stage_key, 'state' => 'awaiting_approval' ),
         ) );
+        $this->invalidate_payment_milestone_summary_cache( $item_id );
         wp_send_json_success( $this->build_payment_milestone_summary( $item_id ) );
     }
 
@@ -34602,6 +34721,7 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
             'item_id'     => $item_id,
             'payload_json'=> array( 'stage_key' => $stage_key, 'state' => 'payment_pending' ),
         ) );
+        $this->invalidate_payment_milestone_summary_cache( $item_id );
         wp_send_json_success( $this->build_payment_milestone_summary( $item_id ) );
     }
 
@@ -34671,6 +34791,7 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
             'item_id'     => $item_id,
             'payload_json'=> array( 'stage_key' => $stage_key, 'state' => 'revision_requested' ),
         ) );
+        $this->invalidate_payment_milestone_summary_cache( $item_id );
         wp_send_json_success( $this->build_payment_milestone_summary( $item_id ) );
     }
 
@@ -34728,6 +34849,7 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
             'item_id'     => $item_id,
             'payload_json'=> array( 'stage_key' => $stage_key ),
         ) );
+        $this->invalidate_payment_milestone_summary_cache( $item_id );
         wp_send_json_success( $this->build_payment_milestone_summary( $item_id ) );
     }
 
@@ -37196,7 +37318,12 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
      * @return array{blocked:bool,message:string}
      */
     private function get_timeline_milestone_gate_state( $item_id ) {
-        $summary = $this->build_payment_milestone_summary( $item_id );
+        $summary = $this->build_payment_milestone_summary(
+            $item_id,
+            array(
+                'lite_rowset' => true,
+            )
+        );
         if ( empty( $summary['enabled'] ) ) {
             return array(
                 'blocked' => false,

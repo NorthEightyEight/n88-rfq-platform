@@ -17368,19 +17368,7 @@ class N88_RFQ_Admin {
                             return;
                         }
 
-                        if (conversationContext.threadType === 'designer_supplier' && !loadAllSuppliers && !conversationContext.supplierId) {
-                            setDesignerMessagesByKey(function(prev) {
-                                var next = Object.assign({}, prev);
-                                next[requestKey] = [];
-                                return next;
-                            });
-                            setDesignerMessagesLoadingByKey(function(prev) {
-                                var next = Object.assign({}, prev);
-                                next[requestKey] = false;
-                                return next;
-                            });
-                            return;
-                        }
+                        /* designer_supplier: omit supplier_id when unknown — backend resolves awarded / single maker (same as ItemDetailModal.jsx). */
 
                         var abortController = typeof AbortController !== 'undefined' ? new AbortController() : null;
                         designerMessagesRequestRefs.current[requestKey] = abortController || { abort: function() {} };
@@ -17404,12 +17392,12 @@ class N88_RFQ_Admin {
                                 return;
                             }
                             
-                            var fetchDesignerMessagesForSupplier = function(targetSupplierId) {
+                            var fetchDesignerMessagesForSupplier = function(targetSupplierId, contextTypeOverride) {
                                 var formData = new FormData();
                                 formData.append('action', 'n88_get_item_messages');
                                 formData.append('item_id', String(itemId));
                                 formData.append('thread_type', conversationContext.threadType);
-                                formData.append('context_type', conversationContext.contextType || 'item_specs');
+                                formData.append('context_type', (contextTypeOverride != null && contextTypeOverride !== '') ? String(contextTypeOverride) : (conversationContext.contextType || 'item_specs'));
                                 if (targetSupplierId) {
                                     formData.append('supplier_id', String(targetSupplierId));
                                 }
@@ -17429,6 +17417,45 @@ class N88_RFQ_Admin {
                                         throw new Error('Invalid JSON response: ' + responseText.slice(0, 300));
                                     }
                                 });
+                            };
+
+                            var mergeDesignerMessageResponses = function(primary, secondary) {
+                                if (!primary || !primary.success || !primary.data) {
+                                    return primary;
+                                }
+                                var msgsA = Array.isArray(primary.data.messages) ? primary.data.messages.slice() : [];
+                                var msgsB = (secondary && secondary.success && secondary.data && Array.isArray(secondary.data.messages)) ? secondary.data.messages.slice() : [];
+                                var merged = msgsA.concat(msgsB);
+                                merged.sort(function(a, b) {
+                                    var aTime = a && a.created_at ? Date.parse(a.created_at) || 0 : 0;
+                                    var bTime = b && b.created_at ? Date.parse(b.created_at) || 0 : 0;
+                                    if (aTime !== bTime) {
+                                        return aTime - bTime;
+                                    }
+                                    return (parseInt(a && a.message_id, 10) || 0) - (parseInt(b && b.message_id, 10) || 0);
+                                });
+                                var seenMessageIds = {};
+                                var dedupedMessages = [];
+                                merged.forEach(function(message) {
+                                    var mk = String(message && message.message_id ? message.message_id : '');
+                                    if (mk && seenMessageIds[mk]) {
+                                        return;
+                                    }
+                                    if (mk) {
+                                        seenMessageIds[mk] = true;
+                                    }
+                                    dedupedMessages.push(message);
+                                });
+                                return { success: true, data: Object.assign({}, primary.data, { messages: dedupedMessages }) };
+                            };
+
+                            var fetchDesignerMessagesForSupplierWithMilestones = function(targetSupplierId) {
+                                if (conversationContext.threadType !== 'designer_supplier' || String(conversationContext.contextType || '') !== 'step_4_production') {
+                                    return fetchDesignerMessagesForSupplier(targetSupplierId);
+                                }
+                                // Step 4 milestone thread already includes legacy [STAGE:*] rows saved under step_4_production.
+                                // Keep this to a single request to avoid duplicate n88_get_item_messages calls on modal open.
+                                return fetchDesignerMessagesForSupplier(targetSupplierId, 'step_4_milestones');
                             };
 
                             var requestPromise = null;
@@ -17451,10 +17478,10 @@ class N88_RFQ_Admin {
                                     return;
                                 }
                                 requestPromise = Promise.all(supplierIdsToLoad.map(function(targetSupplierId) {
-                                    return fetchDesignerMessagesForSupplier(targetSupplierId);
+                                    return fetchDesignerMessagesForSupplierWithMilestones(targetSupplierId);
                                 }));
                             } else {
-                                requestPromise = fetchDesignerMessagesForSupplier(conversationContext.supplierId);
+                                requestPromise = fetchDesignerMessagesForSupplierWithMilestones(conversationContext.supplierId);
                             }
 
                             requestPromise
@@ -17551,6 +17578,7 @@ class N88_RFQ_Admin {
                     // Ensure message history loads every time modal opens/reopens
                     React.useEffect(function() {
                         if (!isOpen || !itemId || !showDesignerMessageForm || activeTab !== 'timeline') return;
+                        if (!timelineData && !timelineError) return;
                         if (activeDesignerConversationContext.threadType === 'designer_supplier') return;
                         var timeoutId = window.setTimeout(function() {
                             try {
@@ -17562,11 +17590,12 @@ class N88_RFQ_Admin {
                         return function() {
                             window.clearTimeout(timeoutId);
                         };
-                    }, [isOpen, itemId, showDesignerMessageForm, activeTab, activeDesignerConversationContext.threadType, activeMessageContextType]);
+                    }, [isOpen, itemId, showDesignerMessageForm, activeTab, activeDesignerConversationContext.threadType, activeMessageContextType, timelineData, timelineError]);
                     React.useEffect(function() {
                         if (!isOpen || !itemId || !showDesignerMessageForm || activeTab !== 'timeline' || activeDesignerConversationContext.threadType !== 'designer_supplier') {
                             return;
                         }
+                        if (!timelineData && !timelineError) return;
                         if (!selectedDirectSupplierId) {
                             setDesignerMessagesByKey(function(prev) {
                                 var next = Object.assign({}, prev);
@@ -17576,7 +17605,23 @@ class N88_RFQ_Admin {
                             return;
                         }
                         loadDesignerMessages(selectedDirectSupplierId);
-                    }, [isOpen, itemId, showDesignerMessageForm, activeTab, activeDesignerConversationContext.threadType, activeMessageContextType, selectedDirectSupplierId, activeDesignerConversationKey]);
+                    }, [isOpen, itemId, showDesignerMessageForm, activeTab, activeDesignerConversationContext.threadType, activeMessageContextType, selectedDirectSupplierId, activeDesignerConversationKey, timelineData, timelineError]);
+                    // Payment milestones (Step 4): stage chat reads designerMessages merged with step_4_milestones — load without opening Message Operator so threads appear.
+                    React.useEffect(function() {
+                        if (!isOpen || !itemId || activeTab !== 'timeline') return;
+                        if (!itemState.has_awarded_bid) return;
+                        if (activeDesignerConversationContext.threadType !== 'designer_supplier') return;
+                        if (activeMessageContextType !== 'step_4_production') return;
+                        if (!timelineData && !timelineError) return;
+                        var validationState = itemState.validation_state && typeof itemState.validation_state === 'object' ? itemState.validation_state : {};
+                        var pm = validationState.payment_milestones;
+                        if (!(pm && pm.enabled)) return;
+                        var supplierPick = normalizeDirectSupplierId();
+                        if (!supplierPick && selectedDirectSupplierId && String(selectedDirectSupplierId) !== allSuppliersOptionValue) {
+                            supplierPick = String(selectedDirectSupplierId);
+                        }
+                        loadDesignerMessages(supplierPick || undefined);
+                    }, [isOpen, itemId, activeTab, itemState.has_awarded_bid, itemState.validation_state, activeDesignerConversationContext.threadType, activeMessageContextType, selectedDirectSupplierId, normalizeDirectSupplierId, loadDesignerMessages, allSuppliersOptionValue, timelineData, timelineError]);
                     React.useEffect(function() {
                         return function() {
                             Object.keys(designerMessagesRequestRefs.current || {}).forEach(function(requestKey) {
@@ -17892,6 +17937,13 @@ class N88_RFQ_Admin {
                         }
                     }, [showDesignerMessageForm, designerMessages]);
                     React.useEffect(function() {
+                        if (!expandedMilestoneStage) return;
+                        setTimeout(function() {
+                            var scrollEl = document.getElementById('n88-admin-milestone-stage-msgs-' + expandedMilestoneStage);
+                            if (scrollEl && designerMessages && designerMessages.length) scrollEl.scrollTop = scrollEl.scrollHeight;
+                        }, 100);
+                    }, [expandedMilestoneStage, designerMessages]);
+                    React.useEffect(function() {
                         if (detailsSupportReady && supportDesignerMessages.length > 0) {
                             setTimeout(function() {
                                 var container = document.getElementById('n88-designer-messages-container-details-admin');
@@ -18042,6 +18094,23 @@ class N88_RFQ_Admin {
                                     setTimelineData(nextTimelineData);
                                     setIsOperatorTimeline(!!(data.data.is_operator));
                                     setTimelineError(null);
+                                    // Timeline payload already carries validation_state for production flow.
+                                    // Hydrate it here so we can avoid a duplicate workflow state request on modal open.
+                                    if (data.data.validation_state && typeof data.data.validation_state === 'object') {
+                                        setItemState(function(prev) {
+                                            var previousState = prev && typeof prev === 'object' ? prev : {};
+                                            var mergedValidationState = mergeValidationState(previousState.validation_state || null, data.data.validation_state || null);
+                                            var awardedCount = parseInt((mergedValidationState && mergedValidationState.execution_awarded_item_count) ? mergedValidationState.execution_awarded_item_count : 0, 10) || 0;
+                                            var nextLoadedSections = ensureItemStateSectionMap(previousState.loaded_sections);
+                                            nextLoadedSections.workflow = true;
+                                            return Object.assign({}, previousState, {
+                                                validation_state: mergedValidationState,
+                                                payment_milestones_summary: (mergedValidationState && mergedValidationState.payment_milestones) ? mergedValidationState.payment_milestones : (previousState.payment_milestones_summary || null),
+                                                has_awarded_bid: previousState.has_awarded_bid || awardedCount > 0,
+                                                loaded_sections: nextLoadedSections
+                                            });
+                                        });
+                                    }
                                 } else {
                                     setTimelineData(null);
                                     setTimelineError(data.message || 'Failed to load timeline.');
@@ -18054,7 +18123,7 @@ class N88_RFQ_Admin {
                             .finally(function() { setTimelineLoading(false); });
                     }, [itemId, shouldSkipRemoteTimelineFetch, buildLocalPendingTimeline]);
                     React.useEffect(function() {
-                        if (activeTab !== 'timeline' || !itemId || timelineData || timelineLoading || timelineError) {
+                        if (!isOpen || activeTab !== 'timeline' || !itemId || timelineData || timelineLoading || timelineError) {
                             return;
                         }
                         var timeoutId = window.setTimeout(function() {
@@ -18063,9 +18132,10 @@ class N88_RFQ_Admin {
                         return function() {
                             window.clearTimeout(timeoutId);
                         };
-                    }, [activeTab, itemId, timelineData, timelineLoading, timelineError, fetchTimeline]);
+                    }, [isOpen, activeTab, itemId, timelineData, timelineLoading, timelineError, fetchTimeline]);
                     React.useEffect(function() {
                         if (!isOpen || !itemId || activeTab !== 'timeline') return;
+                        if (isProductionOnlyItem) return;
                         if (itemStateRequestRef.current && itemStateRequestRef.current.full) return;
                         var timeoutId = window.setTimeout(function() {
                             if (!isItemStateSectionLoaded('workflow') && !isItemStateSectionLoading('workflow')) {
@@ -18078,7 +18148,7 @@ class N88_RFQ_Admin {
                         return function() {
                             window.clearTimeout(timeoutId);
                         };
-                    }, [isOpen, itemId, activeTab, itemState.has_bids, itemState.loaded_sections, itemState.loading_sections]);
+                    }, [isOpen, itemId, activeTab, itemState.has_bids, itemState.loaded_sections, itemState.loading_sections, isProductionOnlyItem]);
                     React.useEffect(function() {
                         if (!window.n88BoardTimelineCache) {
                             window.n88BoardTimelineCache = {};
@@ -18203,7 +18273,7 @@ class N88_RFQ_Admin {
                         fd.append('action', 'n88_send_item_message');
                         fd.append('item_id', String(itemId));
                         fd.append('thread_type', 'designer_supplier');
-                        fd.append('context_type', 'step_4_production');
+                        fd.append('context_type', 'step_4_milestones');
                         fd.append('message_text', composedMessage);
                         var numericSupplierId = parseInt(recipient, 10);
                         if (!isNaN(numericSupplierId) && String(numericSupplierId) === String(recipient)) fd.append('supplier_id', String(numericSupplierId));
@@ -18640,6 +18710,14 @@ class N88_RFQ_Admin {
                                     fetchItemState('full', true);
                                 }, 350);
                             }
+                        } else if (activeTab === 'timeline') {
+                            // Timeline view hydrates from n88_get_item_timeline + sectioned loaders;
+                            // skip eager section=full bootstrap to avoid redundant open-time requests.
+                            timeoutId = window.setTimeout(function() {
+                                if (!isItemStateSectionLoaded('workflow') && !isItemStateSectionLoading('workflow')) {
+                                    fetchItemState('workflow');
+                                }
+                            }, 120);
                         } else {
                             timeoutId = window.setTimeout(function() {
                                 // Bootstrap modal with full state in one call.
@@ -18652,7 +18730,7 @@ class N88_RFQ_Admin {
                                 window.clearTimeout(timeoutId);
                             }
                         };
-                    }, [isOpen, itemId, item && item.rfq_state]);
+                    }, [isOpen, itemId, item && item.rfq_state, activeTab, isItemStateSectionLoaded, isItemStateSectionLoading, fetchItemState]);
                     React.useEffect(function() {
                         if (!isOpen || !requestSampleContextProp) return;
                         if (requestSampleContextProp.bidId) {
@@ -25745,7 +25823,7 @@ class N88_RFQ_Admin {
                                                                         };
                                                                         var stageGuide = designerGuideByStage[stageKey] || null;
                                                                         return React.createElement('div', { key: stageKey, style: { border: '1px solid ' + darkBorder, borderRadius: '4px', marginBottom: '8px', overflow: 'hidden' } },
-                                                                            React.createElement('button', { type: 'button', onClick: function() { if (isExpanded) { setExpandedMilestoneStage(''); return; } setExpandedMilestoneStage(stageKey); fetchMilestoneStageDetails(stageKey); }, style: { width: '100%', textAlign: 'left', padding: '10px', background: '#111', color: '#ddd', border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', gap: '8px', transition: 'all 0.2s ease' } },
+                                                                            React.createElement('button', { type: 'button', onClick: function() { if (isExpanded) { setExpandedMilestoneStage(''); return; } setExpandedMilestoneStage(stageKey); fetchMilestoneStageDetails(stageKey); var supPick = normalizeDirectSupplierId(); if (!supPick && selectedDirectSupplierId && String(selectedDirectSupplierId) !== allSuppliersOptionValue) { supPick = String(selectedDirectSupplierId); } if (typeof loadDesignerMessages === 'function') { loadDesignerMessages(supPick || undefined); } }, style: { width: '100%', textAlign: 'left', padding: '10px', background: '#111', color: '#ddd', border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', gap: '8px', transition: 'all 0.2s ease' } },
                                                                                 React.createElement('span', null, (stage.stage_label || '') + ' (' + (stage.percent_alloc || 0) + '%)'),
                                                                                 React.createElement('span', { style: { color: greenAccent } }, queueState)
                                                                             ),
@@ -25805,30 +25883,40 @@ class N88_RFQ_Admin {
                                                                                         var stageMsgs = allMsgs.filter(function(msg) {
                                                                                             var txt = msg && msg.message_text ? String(msg.message_text) : '';
                                                                                             return txt.indexOf(stageTag) === 0;
-                                                                                        }).sort(function(a, b) { return new Date(b.created_at) - new Date(a.created_at); });
+                                                                                        }).sort(function(a, b) {
+                                                                                            var da = new Date(a.created_at || 0).getTime();
+                                                                                            var db = new Date(b.created_at || 0).getTime();
+                                                                                            if (da !== db) return da - db;
+                                                                                            return (parseInt(a.message_id, 10) || 0) - (parseInt(b.message_id, 10) || 0);
+                                                                                        });
                                                                                         var visibleCount = (stageCommVisibleCountByStage && stageCommVisibleCountByStage[stageKey]) ? stageCommVisibleCountByStage[stageKey] : 5;
-                                                                                        var visibleMsgs = stageMsgs.slice(0, visibleCount);
+                                                                                        var totalStage = stageMsgs.length;
+                                                                                        var skipOlder = Math.max(0, totalStage - visibleCount);
+                                                                                        var visibleMsgs = stageMsgs.slice(skipOlder);
+                                                                                        var hasOlderHidden = skipOlder > 0;
                                                                                         var stageFileCount = (stageCommFilesByStage && stageCommFilesByStage[stageKey]) ? stageCommFilesByStage[stageKey].length : 0;
                                                                                         var isSendingStage = !!(stageCommSendingByStage && stageCommSendingByStage[stageKey]);
                                                                                         return React.createElement('div', { style: { border: '1px solid #2e2e2e', borderRadius: '4px', background: '#101010', overflow: 'hidden', position: 'sticky', top: '0', alignSelf: 'start', maxHeight: 'min(560px, 78vh)', display: 'flex', flexDirection: 'column', minWidth: 0 } },
                                                                                             React.createElement('div', { style: { padding: '8px 10px', borderBottom: '1px solid #2e2e2e', fontSize: '10px', fontWeight: 700, letterSpacing: '0.7px', textTransform: 'uppercase', color: '#ff4d9a' } }, 'Messages'),
-                                                                                            React.createElement('div', { style: { fontSize: '9px', color: '#888', padding: '6px 10px', borderBottom: '1px solid #2e2e2e', lineHeight: 1.4 } }, 'Designer / supplier conversation for this milestone (latest first).'),
-                                                                                            React.createElement('div', { style: { flex: '1', minHeight: '120px', maxHeight: '240px', overflowY: 'auto', padding: '8px 10px', borderBottom: '1px solid #2e2e2e' } },
+                                                                                            React.createElement('div', { style: { fontSize: '9px', color: '#888', padding: '6px 10px', borderBottom: '1px solid #2e2e2e', lineHeight: 1.4 } }, 'Designer / supplier — oldest at top, newest above the composer (like chat).'),
+                                                                                            React.createElement('div', { id: 'n88-admin-milestone-stage-msgs-' + stageKey, style: { flex: '1', minHeight: '120px', maxHeight: '240px', overflowY: 'auto', padding: '8px 10px', borderBottom: '1px solid #2e2e2e', display: 'flex', flexDirection: 'column', gap: '6px' } },
+                                                                                                hasOlderHidden ? React.createElement('button', { type: 'button', onClick: function() { setStageCommVisibleCountByStage(function(prev) { var n = Object.assign({}, prev); n[stageKey] = (n[stageKey] || 5) + 5; return n; }); }, style: { alignSelf: 'stretch', flexShrink: 0, padding: '6px', border: 'none', borderRadius: '4px', background: '#161616', color: '#bbb', cursor: 'pointer', fontSize: '10px', textTransform: 'uppercase' } }, 'Load older messages') : null,
                                                                                                 visibleMsgs.length ? visibleMsgs.map(function(msg, mi) {
                                                                                                     var isMine = String(msg.sender_role || '').indexOf('designer') !== -1;
                                                                                                     var attachments = [];
                                                                                                     try { if (msg.message_attachments) { var a = typeof msg.message_attachments === 'string' ? JSON.parse(msg.message_attachments) : msg.message_attachments; if (Array.isArray(a)) attachments = a; } } catch (e) {}
-                                                                                                    return React.createElement('div', { key: 'sc-' + (msg.message_id || mi), style: { marginBottom: '8px', padding: '6px', background: isMine ? 'rgba(255,77,154,0.12)' : '#171717', border: '1px solid #2a2a2a', borderRadius: '4px', textAlign: isMine ? 'right' : 'left' } },
-                                                                                                        React.createElement('div', { style: { fontSize: '10px', color: '#999', marginBottom: '4px' } }, (msg.created_at || '') + ' — ' + (isMine ? 'You' : 'Supplier')),
-                                                                                                        React.createElement('div', { style: { fontSize: '11px', color: '#ddd', whiteSpace: 'pre-wrap', display: 'inline-block', maxWidth: '100%', textAlign: 'left', verticalAlign: 'top' } }, String(msg.message_text || '').replace(stageTag, '').trim() || '(message)'),
-                                                                                                        attachments.length ? React.createElement('div', { style: { marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: isMine ? 'flex-end' : 'flex-start' } }, attachments.map(function(att, ai) {
-                                                                                                            var isImg = /\.(jpe?g|png|gif|webp)(\?|$)/i.test(String(att.url || ''));
-                                                                                                            return React.createElement('a', { key: 'sat-' + ai, href: att.url, target: '_blank', rel: 'noopener noreferrer', style: { width: '28px', height: '28px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', border: '1px solid #333', borderRadius: '5px', backgroundColor: '#0a0a0a', textDecoration: 'none', flexShrink: 0 } }, isImg ? React.createElement('img', { src: att.url, alt: '', style: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' } }) : React.createElement('span', { style: { fontSize: '7px', color: greenAccent } }, 'FILE'));
-                                                                                                        })) : null
+                                                                                                    return React.createElement('div', { key: 'sc-' + (msg.message_id || mi), style: { display: 'flex', justifyContent: isMine ? 'flex-end' : 'flex-start', marginBottom: '2px' } },
+                                                                                                        React.createElement('div', { style: { maxWidth: '88%', padding: '8px', background: isMine ? 'rgba(255,77,154,0.12)' : '#171717', border: '1px solid #2a2a2a', borderRadius: '10px', textAlign: isMine ? 'right' : 'left' } },
+                                                                                                            React.createElement('div', { style: { fontSize: '10px', color: '#999', marginBottom: '4px' } }, (msg.created_at || '') + ' — ' + (isMine ? 'You' : 'Supplier')),
+                                                                                                            React.createElement('div', { style: { fontSize: '11px', color: '#ddd', whiteSpace: 'pre-wrap', display: 'inline-block', maxWidth: '100%', textAlign: 'left', verticalAlign: 'top' } }, String(msg.message_text || '').replace(stageTag, '').trim() || '(message)'),
+                                                                                                            attachments.length ? React.createElement('div', { style: { marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: isMine ? 'flex-end' : 'flex-start' } }, attachments.map(function(att, ai) {
+                                                                                                                var isImg = /\.(jpe?g|png|gif|webp)(\?|$)/i.test(String(att.url || ''));
+                                                                                                                return React.createElement('a', { key: 'sat-' + ai, href: att.url, target: '_blank', rel: 'noopener noreferrer', style: { width: '28px', height: '28px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', border: '1px solid #333', borderRadius: '5px', backgroundColor: '#0a0a0a', textDecoration: 'none', flexShrink: 0 } }, isImg ? React.createElement('img', { src: att.url, alt: '', style: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' } }) : React.createElement('span', { style: { fontSize: '7px', color: greenAccent } }, 'FILE'));
+                                                                                                            })) : null
+                                                                                                        )
                                                                                                     );
-                                                                                                }) : React.createElement('div', { style: { fontSize: '11px', color: '#777' } }, 'No messages yet.')
+                                                                                                }) : React.createElement('div', { style: { fontSize: '11px', color: '#777' } }, isLoadingDesignerMessages ? 'Loading messages…' : 'No messages yet.')
                                                                                             ),
-                                                                                            stageMsgs.length > visibleCount ? React.createElement('button', { type: 'button', onClick: function() { setStageCommVisibleCountByStage(function(prev) { var n = Object.assign({}, prev); n[stageKey] = (n[stageKey] || 5) + 5; return n; }); }, style: { width: '100%', padding: '6px', border: 'none', borderBottom: '1px solid #2e2e2e', background: '#161616', color: '#bbb', cursor: 'pointer', fontSize: '10px', textTransform: 'uppercase' } }, 'Load older') : null,
                                                                                             React.createElement('div', { style: { padding: '8px 10px', flexShrink: 0 } },
                                                                                                 React.createElement('div', { style: { display: 'flex', justifyContent: 'flex-end', marginBottom: '6px', gap: '6px', alignItems: 'center' } },
                                                                                                     React.createElement('button', { type: 'button', title: 'Attach files', onClick: function() { var hi = document.getElementById('n88-stage-comm-files-' + stageKey); if (hi) hi.click(); }, style: { backgroundColor: '#111', border: '1px solid ' + darkBorder, padding: '6px 10px', cursor: 'pointer', fontSize: '10px', lineHeight: 1.2, color: darkText, borderRadius: '12px', opacity: stageFileCount > 0 ? 1 : 0.85 } }, stageFileCount ? ('Files: ' + stageFileCount) : 'Attach files'),
