@@ -5,6 +5,18 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class N88_RFQ_Notifications {
+    const EMAIL_QUEUE_HOOK = 'n88_process_async_action_email';
+    const EMAIL_DEDUPE_TTL = 600;
+
+    /**
+     * Register universal action email hooks.
+     *
+     * @return void
+     */
+    public static function init_universal_action_email_system() {
+        add_action( 'n88_event_logged', array( __CLASS__, 'handle_event_logged' ), 10, 5 );
+        add_action( self::EMAIL_QUEUE_HOOK, array( __CLASS__, 'process_async_action_email' ), 10, 1 );
+    }
 
     /**
      * Create a notification
@@ -235,6 +247,355 @@ class N88_RFQ_Notifications {
             'related_id' => $related_id,
             'is_read' => $notification->is_read,
             'created_at' => $notification->created_at,
+        );
+    }
+
+    /**
+     * Queue event-driven emails for designer + supplier recipients.
+     *
+     * @param int    $event_id Event ID.
+     * @param string $event_type Event type slug.
+     * @param string $object_type Object type slug.
+     * @param array  $args Event arguments.
+     * @param int    $actor_user_id Actor ID.
+     * @return void
+     */
+    public static function handle_event_logged( $event_id, $event_type, $object_type, $args, $actor_user_id ) {
+        $event_id = absint( $event_id );
+        if ( ! $event_id ) {
+            return;
+        }
+
+        $context = self::build_universal_email_context( $event_id, $event_type, $object_type, $args, $actor_user_id );
+        if ( empty( $context['recipients'] ) ) {
+            return;
+        }
+
+        foreach ( $context['recipients'] as $recipient ) {
+            $dedupe_key = self::build_email_dedupe_key( $context, $recipient );
+            if ( get_transient( $dedupe_key ) ) {
+                continue;
+            }
+            set_transient( $dedupe_key, 1, self::EMAIL_DEDUPE_TTL );
+            wp_schedule_single_event( time() + 5, self::EMAIL_QUEUE_HOOK, array( array(
+                'event_id'        => $context['event_id'],
+                'event_type'      => $context['event_type'],
+                'event_label'     => $context['event_label'],
+                'actor_name'      => $context['actor_name'],
+                'recipient'       => $recipient,
+                'project_name'    => $context['project_name'],
+                'item_id'         => $context['item_id'],
+                'project_id'      => $context['project_id'],
+                'deep_link'       => $context['deep_link'],
+                'object_type'     => $context['object_type'],
+                'email_detail_html' => isset( $context['email_detail_html'] ) ? $context['email_detail_html'] : '',
+            ) ) );
+        }
+        if ( function_exists( 'spawn_cron' ) ) {
+            spawn_cron();
+        }
+    }
+
+    /**
+     * Process one queued email job asynchronously.
+     *
+     * @param array $job Queued job payload.
+     * @return void
+     */
+    public static function process_async_action_email( $job ) {
+        if ( ! is_array( $job ) || empty( $job['recipient'] ) || ! is_array( $job['recipient'] ) ) {
+            return;
+        }
+
+        $recipient = $job['recipient'];
+        $email     = isset( $recipient['email'] ) ? sanitize_email( $recipient['email'] ) : '';
+        if ( ! $email ) {
+            return;
+        }
+
+        $subject = sprintf(
+            '[N88 RFQ] %s: %s',
+            self::to_human_label( isset( $job['event_label'] ) ? $job['event_label'] : 'Workflow Update' ),
+            ! empty( $job['project_name'] ) ? sanitize_text_field( $job['project_name'] ) : 'Production Oversight'
+        );
+
+        $body = self::get_universal_action_email_template( array(
+            'recipient_name' => ! empty( $recipient['name'] ) ? sanitize_text_field( $recipient['name'] ) : 'there',
+            'recipient_role' => ! empty( $recipient['role'] ) ? sanitize_text_field( $recipient['role'] ) : 'participant',
+            'actor_name'     => ! empty( $job['actor_name'] ) ? sanitize_text_field( $job['actor_name'] ) : 'A teammate',
+            'event_label'    => self::to_human_label( isset( $job['event_label'] ) ? $job['event_label'] : 'Workflow Update' ),
+            'project_name'   => ! empty( $job['project_name'] ) ? sanitize_text_field( $job['project_name'] ) : 'Production Oversight',
+            'deep_link'      => ! empty( $job['deep_link'] ) ? esc_url_raw( $job['deep_link'] ) : home_url( '/' ),
+            'item_id'        => ! empty( $job['item_id'] ) ? absint( $job['item_id'] ) : 0,
+            'project_id'     => ! empty( $job['project_id'] ) ? absint( $job['project_id'] ) : 0,
+            'event_type'     => ! empty( $job['event_type'] ) ? sanitize_key( $job['event_type'] ) : '',
+            'email_detail_html' => ! empty( $job['email_detail_html'] ) ? $job['email_detail_html'] : '',
+        ) );
+
+        wp_mail(
+            $email,
+            $subject,
+            $body,
+            array( 'Content-Type: text/html; charset=UTF-8' )
+        );
+    }
+
+    private static function build_universal_email_context( $event_id, $event_type, $object_type, $args, $actor_user_id ) {
+        $item_id    = ! empty( $args['item_id'] ) ? absint( $args['item_id'] ) : 0;
+        $project_id = ! empty( $args['project_id'] ) ? absint( $args['project_id'] ) : 0;
+        $payload    = array();
+
+        if ( isset( $args['payload_json'] ) && is_array( $args['payload_json'] ) ) {
+            $payload = $args['payload_json'];
+        } elseif ( ! empty( $args['payload_json'] ) && is_string( $args['payload_json'] ) ) {
+            $decoded = json_decode( $args['payload_json'], true );
+            if ( is_array( $decoded ) ) {
+                $payload = $decoded;
+            }
+        }
+
+        if ( ! $project_id && ! empty( $payload['project_id'] ) ) {
+            $project_id = absint( $payload['project_id'] );
+        }
+        if ( ! $item_id && ! empty( $payload['item_id'] ) ) {
+            $item_id = absint( $payload['item_id'] );
+        }
+
+        $recipient_ids = self::resolve_item_participant_user_ids( $item_id, $payload );
+        if ( ! empty( $payload['supplier_id'] ) ) {
+            $recipient_ids[] = absint( $payload['supplier_id'] );
+        }
+        $recipient_ids = array_values( array_unique( array_filter( $recipient_ids ) ) );
+
+        $recipients = array();
+        foreach ( $recipient_ids as $recipient_id ) {
+            $user = get_userdata( $recipient_id );
+            if ( ! $user || empty( $user->user_email ) ) {
+                continue;
+            }
+            $recipients[] = array(
+                'id'    => (int) $recipient_id,
+                'email' => $user->user_email,
+                'name'  => $user->display_name,
+                'role'  => self::infer_user_workflow_role( $user ),
+            );
+        }
+
+        $actor      = $actor_user_id ? get_userdata( $actor_user_id ) : null;
+        $project    = $project_id && class_exists( 'N88_RFQ_Projects' ) ? ( new N88_RFQ_Projects() )->get_project_admin( $project_id ) : null;
+        $project_name = is_array( $project ) && ! empty( $project['project_name'] ) ? $project['project_name'] : 'Production Oversight';
+
+        return array(
+            'event_id'     => absint( $event_id ),
+            'event_type'   => sanitize_key( $event_type ),
+            'event_label'  => self::map_event_label( $event_type ),
+            'object_type'  => sanitize_key( $object_type ),
+            'actor_name'   => $actor ? $actor->display_name : 'A teammate',
+            'item_id'      => $item_id,
+            'project_id'   => $project_id,
+            'project_name' => $project_name,
+            'deep_link'    => self::build_deep_link( $project_id, $item_id ),
+            'recipients'   => $recipients,
+            'email_detail_html' => self::build_email_detail_html( $event_type, $payload ),
+        );
+    }
+
+    private static function resolve_item_participant_user_ids( $item_id, $payload = array() ) {
+        global $wpdb;
+        $ids = array();
+        if ( ! $item_id ) {
+            return $ids;
+        }
+
+        $items_table = $wpdb->prefix . 'n88_items';
+        $item_row = $wpdb->get_row(
+            $wpdb->prepare( "SELECT owner_user_id, meta_json FROM {$items_table} WHERE id = %d LIMIT 1", $item_id ),
+            ARRAY_A
+        );
+
+        if ( is_array( $item_row ) ) {
+            if ( ! empty( $item_row['owner_user_id'] ) ) {
+                $ids[] = absint( $item_row['owner_user_id'] );
+            }
+            if ( ! empty( $item_row['meta_json'] ) ) {
+                $meta = json_decode( $item_row['meta_json'], true );
+                if ( is_array( $meta ) && ! empty( $meta['active_supplier_id'] ) ) {
+                    $ids[] = absint( $meta['active_supplier_id'] );
+                }
+            }
+        }
+
+        if ( ! empty( $payload['supplier_id'] ) ) {
+            $ids[] = absint( $payload['supplier_id'] );
+        }
+
+        return array_values( array_unique( array_filter( $ids ) ) );
+    }
+
+    private static function build_deep_link( $project_id, $item_id ) {
+        if ( $item_id > 0 ) {
+            return add_query_arg(
+                array( 'item_id' => $item_id ),
+                home_url( '/supplier-dashboard/' )
+            );
+        }
+        if ( $project_id > 0 ) {
+            return add_query_arg(
+                array( 'project_id' => $project_id ),
+                home_url( '/project-detail/' )
+            );
+        }
+        return home_url( '/' );
+    }
+
+    private static function infer_user_workflow_role( $user ) {
+        $roles = isset( $user->roles ) && is_array( $user->roles ) ? $user->roles : array();
+        if ( in_array( 'n88_supplier', $roles, true ) || in_array( 'n88_supplier_admin', $roles, true ) || in_array( 'supplier', $roles, true ) ) {
+            return 'supplier';
+        }
+        return 'designer';
+    }
+
+    /**
+     * Human-readable Step 4 milestone keys (production oversight stages).
+     *
+     * @param string $stage_key Stage key from DB.
+     * @return string
+     */
+    private static function humanize_step4_stage_key( $stage_key ) {
+        $key = sanitize_key( (string) $stage_key );
+        $map = array(
+            '4_1_planning'    => '4.1 Planning / Approval',
+            '4_2_preparation' => '4.2 Preparation',
+            '4_3_core'        => '4.3 Core Development',
+            '4_4_assembly'    => '4.4 Assembly / Integration',
+            '4_5_refinement'  => '4.5 Refinement / Finishing',
+            '4_6_completion'  => '4.6 Completion',
+        );
+        return isset( $map[ $key ] ) ? $map[ $key ] : $key;
+    }
+
+    /**
+     * Optional extra lines in the universal email (stage, sample status).
+     *
+     * @param string $event_type Event slug.
+     * @param array  $payload    Decoded payload_json.
+     * @return string Safe HTML snippet or empty.
+     */
+    private static function build_email_detail_html( $event_type, $payload ) {
+        if ( ! is_array( $payload ) || empty( $payload ) ) {
+            return '';
+        }
+        $lines = array();
+        if ( ! empty( $payload['stage_key'] ) ) {
+            $lines[] = '<strong>Stage:</strong> ' . esc_html( self::humanize_step4_stage_key( $payload['stage_key'] ) );
+        }
+        if ( ! empty( $payload['sample_status'] ) ) {
+            $lines[] = '<strong>Sample status:</strong> ' . esc_html( sanitize_text_field( $payload['sample_status'] ) );
+        }
+        if ( ! empty( $payload['state'] ) && in_array( $event_type, array( 'step4_stage_progress_submitted', 'step4_stage_progress_approved', 'step4_stage_revision_requested' ), true ) ) {
+            $lines[] = '<strong>State:</strong> ' . esc_html( sanitize_text_field( $payload['state'] ) );
+        }
+        if ( empty( $lines ) ) {
+            return '';
+        }
+        return '<div style="margin-top:8px;">' . implode( '<br>', $lines ) . '</div>';
+    }
+
+    private static function map_event_label( $event_type ) {
+        $map = array(
+            'designer_profile_created' => 'Welcome',
+            'item_created' => 'Add item',
+            'item_added_to_board' => 'Add Irene batch workflow',
+            'rfq_field_updated' => 'RFQ sent / received',
+            'item_message_sent' => 'Message received',
+            'materials_requested' => 'Sample requested / shipped',
+            'material_validation_requested' => 'Sample request recorded',
+            'material_samples_received' => 'Samples received',
+            'material_samples_approved' => 'Samples approved',
+            'supplier_material_sample_updated' => 'Sample status update',
+            'validation_po_uploaded' => 'Authorization documentation uploaded',
+            'validation_com_submitted' => 'Logistics shipment recorded',
+            'validation_deposit_submitted' => 'Production deposit record submitted',
+            'production_deposit_sent_by_designer' => 'Production deposit sent',
+            'bid_awarded' => 'Project awarded',
+            'payment_submitted' => 'Execution activation payment submitted',
+            'payment_confirmed' => 'Execution activation payment confirmed',
+            'execution_unlocked' => 'Execution Activation Required',
+            'cad_uploaded' => 'CAD submitted',
+            'milestone_updated' => 'Stage submitted',
+            'milestone_created' => 'Step 4 milestones configured',
+            'stage_locked' => 'Step 4 stage status update',
+            'stage_unlocked' => 'Step 4 stage unlocked',
+            'step4_stage_progress_submitted' => 'Step 4 stage work submitted',
+            'step4_stage_progress_approved' => 'Step 4 stage approved',
+            'step4_stage_revision_requested' => 'Step 4 revision requested',
+            'step4_stage_payment_submitted' => 'Step 4 milestone payment submitted',
+            'step4_stage_payment_confirmed' => 'Step 4 milestone payment confirmed',
+            'prototype_revision_requested' => 'Revision requested',
+            'step5_qc_packing_submitted' => 'QC submitted',
+            'step6_delivery_submitted' => 'Delivery update',
+            'step6_delivery_confirmed_complete' => 'Delivery update',
+        );
+        return isset( $map[ $event_type ] ) ? $map[ $event_type ] : str_replace( '_', ' ', (string) $event_type );
+    }
+
+    private static function to_human_label( $label ) {
+        return trim( ucwords( str_replace( '_', ' ', (string) $label ) ) );
+    }
+
+    private static function build_email_dedupe_key( $context, $recipient ) {
+        return 'n88_evt_mail_' . md5(
+            implode( '|', array(
+                isset( $context['event_id'] ) ? (string) $context['event_id'] : '0',
+                isset( $context['event_type'] ) ? (string) $context['event_type'] : '',
+                isset( $recipient['id'] ) ? (string) $recipient['id'] : '0',
+            ) )
+        );
+    }
+
+    /**
+     * One universal action email template for all event-driven updates.
+     *
+     * @param array $data Template data.
+     * @return string
+     */
+    public static function get_universal_action_email_template( $data ) {
+        $site_name = get_bloginfo( 'name' );
+        $deep_link = ! empty( $data['deep_link'] ) ? esc_url( $data['deep_link'] ) : esc_url( home_url( '/' ) );
+        $recipient_role = ! empty( $data['recipient_role'] ) ? self::to_human_label( $data['recipient_role'] ) : 'Participant';
+        $detail_html      = ! empty( $data['email_detail_html'] ) ? $data['email_detail_html'] : '';
+
+        return sprintf(
+            '<div style="font-family:Arial,sans-serif;background:#f7f7f7;padding:20px;">
+                <div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e2e2e2;border-radius:8px;overflow:hidden;">
+                    <div style="background:#101828;color:#ffffff;padding:18px 20px;">
+                        <h2 style="margin:0;font-size:20px;">%s - Production Oversight Update</h2>
+                    </div>
+                    <div style="padding:20px;color:#1f2937;">
+                        <p style="margin:0 0 12px;">Hi %s,</p>
+                        <p style="margin:0 0 12px;"><strong>%s</strong> has triggered a workflow update.</p>
+                        <div style="background:#f4f6f8;border-left:4px solid #111827;padding:12px 14px;margin:14px 0;">
+                            <div><strong>Action:</strong> %s</div>
+                            <div><strong>Project:</strong> %s</div>
+                            <div><strong>Your Role:</strong> %s</div>
+                            %s
+                        </div>
+                        <p style="margin:0 0 12px;">This notification is part of the Production Oversight Only workflow.</p>
+                        <p style="margin:18px 0 0;">
+                            <a href="%s" style="display:inline-block;background:#111827;color:#ffffff;text-decoration:none;padding:10px 16px;border-radius:6px;">Open Update</a>
+                        </p>
+                    </div>
+                </div>
+            </div>',
+            esc_html( $site_name ),
+            esc_html( isset( $data['recipient_name'] ) ? $data['recipient_name'] : 'there' ),
+            esc_html( isset( $data['actor_name'] ) ? $data['actor_name'] : 'A teammate' ),
+            esc_html( isset( $data['event_label'] ) ? $data['event_label'] : 'Workflow Update' ),
+            esc_html( isset( $data['project_name'] ) ? $data['project_name'] : 'Production Oversight' ),
+            esc_html( $recipient_role ),
+            $detail_html,
+            $deep_link
         );
     }
 
@@ -1205,3 +1566,5 @@ class N88_RFQ_Notifications {
         return $styles . $header . $body_html . $footer;
     }
 }
+
+add_action( 'plugins_loaded', array( 'N88_RFQ_Notifications', 'init_universal_action_email_system' ), 20 );

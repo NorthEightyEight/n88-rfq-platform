@@ -93,6 +93,18 @@ class N88_Events {
         'payment_confirmed',
         'stage_locked',
         'stage_unlocked',
+        // Commit 3.C.30: Material validation + Step 4 milestone action emails
+        'material_samples_received',
+        'material_samples_approved',
+        'validation_po_uploaded',
+        'validation_com_submitted',
+        'supplier_material_sample_updated',
+        'step4_stage_progress_submitted',
+        'step4_stage_progress_approved',
+        'step4_stage_revision_requested',
+        'step4_stage_payment_submitted',
+        'step4_stage_payment_confirmed',
+        'validation_deposit_submitted',
     );
 
     /**
@@ -157,12 +169,15 @@ class N88_Events {
             return false;
         }
 
-        // Validate event type against whitelist
+        // Validate event type against whitelist, with controlled dynamic fallback.
         if ( ! in_array( $data['event_type'], self::$allowed_event_types, true ) ) {
-            if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-                error_log( 'N88_Events::insert_event() - Invalid event type: ' . $data['event_type'] );
+            $allow_dynamic_type = apply_filters( 'n88_events_allow_dynamic_types', true, $data['event_type'], $data );
+            if ( ! $allow_dynamic_type ) {
+                if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+                    error_log( 'N88_Events::insert_event() - Invalid event type: ' . $data['event_type'] );
+                }
+                return false;
             }
-            return false;
         }
 
         // Validate object_type against whitelist
@@ -389,7 +404,19 @@ function n88_log_event( $event_type, $object_type, $args = array() ) {
         ),
         $args
     );
-    
-    return N88_Events::insert_event( $data );
+
+    $event_id = N88_Events::insert_event( $data );
+    if ( $event_id ) {
+        do_action(
+            'n88_event_logged',
+            (int) $event_id,
+            (string) $event_type,
+            (string) $object_type,
+            is_array( $args ) ? $args : array(),
+            (int) get_current_user_id()
+        );
+    }
+
+    return $event_id;
 }
 

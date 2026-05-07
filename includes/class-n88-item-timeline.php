@@ -26,6 +26,39 @@ class N88_Item_Timeline {
     const STATUS_DELAYED    = 'delayed'; // derived when expected_by passed and not completed
 
     /**
+     * Read post-production state from item meta.
+     *
+     * @param int $item_id
+     * @return array
+     */
+    private static function get_post_production_state( $item_id ) {
+        global $wpdb;
+        $items_table = $wpdb->prefix . 'n88_items';
+        $meta_json   = $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT meta_json FROM {$items_table} WHERE id = %d LIMIT 1",
+                absint( $item_id )
+            )
+        );
+        $meta = ! empty( $meta_json ) ? json_decode( $meta_json, true ) : array();
+        if ( ! is_array( $meta ) ) {
+            $meta = array();
+        }
+        $validation = isset( $meta['material_validation'] ) && is_array( $meta['material_validation'] ) ? $meta['material_validation'] : array();
+        $post_prod  = isset( $validation['post_production'] ) && is_array( $validation['post_production'] ) ? $validation['post_production'] : array();
+        if ( empty( $post_prod ) && isset( $meta['step_execution'] ) && is_array( $meta['step_execution'] ) ) {
+            $post_prod = $meta['step_execution'];
+        }
+        $step5      = isset( $post_prod['step5'] ) && is_array( $post_prod['step5'] ) ? $post_prod['step5'] : array();
+        $step6      = isset( $post_prod['step6'] ) && is_array( $post_prod['step6'] ) ? $post_prod['step6'] : array();
+
+        return array(
+            'step5' => $step5,
+            'step6' => $step6,
+        );
+    }
+
+    /**
      * Ensure a timeline exists for the item (create if missing).
      *
      * @param int $item_id n88_items.id
@@ -299,7 +332,29 @@ class N88_Item_Timeline {
             return true;
         }
 
-        // Steps 5–6 (Commit 3.B.5.A1): at least one video submission OR operator evidence OR evidence_verified_at
+        $post_production = self::get_post_production_state( $item_id );
+
+        // Step 5: require both QC + packing proof artifacts.
+        if ( 5 === $step_number ) {
+            $step5 = isset( $post_production['step5'] ) && is_array( $post_production['step5'] ) ? $post_production['step5'] : array();
+            $qc_ids = isset( $step5['qc_proof_file_ids'] ) && is_array( $step5['qc_proof_file_ids'] ) ? array_filter( array_map( 'absint', $step5['qc_proof_file_ids'] ) ) : array();
+            $pack_ids = isset( $step5['packing_proof_file_ids'] ) && is_array( $step5['packing_proof_file_ids'] ) ? array_filter( array_map( 'absint', $step5['packing_proof_file_ids'] ) ) : array();
+            if ( ! empty( $qc_ids ) && ! empty( $pack_ids ) ) {
+                return true;
+            }
+        }
+
+        // Step 6: require tracking number and at least one shipping doc.
+        if ( 6 === $step_number ) {
+            $step6 = isset( $post_production['step6'] ) && is_array( $post_production['step6'] ) ? $post_production['step6'] : array();
+            $tracking_number = isset( $step6['tracking_number'] ) ? trim( (string) $step6['tracking_number'] ) : '';
+            $doc_ids = isset( $step6['shipping_document_file_ids'] ) && is_array( $step6['shipping_document_file_ids'] ) ? array_filter( array_map( 'absint', $step6['shipping_document_file_ids'] ) ) : array();
+            if ( '' !== $tracking_number && ! empty( $doc_ids ) ) {
+                return true;
+            }
+        }
+
+        // Steps 5–6 legacy fallback: at least one video submission OR operator evidence OR evidence_verified_at
         if ( $step_number >= 5 && $step_number <= 6 ) {
             $video_sub_table = $wpdb->prefix . 'n88_timeline_step_video_submissions';
             $evidence_table  = $wpdb->prefix . 'n88_timeline_step_evidence';
@@ -369,6 +424,15 @@ class N88_Item_Timeline {
         }
         if ( $step['status'] !== self::STATUS_PENDING ) {
             return array( 'success' => false, 'message' => 'Step is not pending.' );
+        }
+
+        // Step 6 gate: QC + packing must be approved first.
+        if ( 6 === $step_number ) {
+            $post_production = self::get_post_production_state( $item_id );
+            $step5_status = isset( $post_production['step5']['status'] ) ? sanitize_key( (string) $post_production['step5']['status'] ) : 'not_started';
+            if ( 'approved' !== $step5_status ) {
+                return array( 'success' => false, 'message' => 'Step 6 is blocked until Step 5 QC + packing is approved by buyer.' );
+            }
         }
 
         // Commit 28: Production (Step 4) starts only after operator marks deposit received
