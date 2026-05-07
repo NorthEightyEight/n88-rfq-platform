@@ -206,6 +206,15 @@ class N88_RFQ_Auth {
         add_action( 'wp_ajax_n88_operator_add_step_video', array( $this, 'ajax_operator_add_step_video' ) );
         add_action( 'wp_ajax_n88_designer_submit_step_comment', array( $this, 'ajax_designer_submit_step_comment' ) );
         add_action( 'wp_ajax_n88_get_step_456_videos_comments', array( $this, 'ajax_get_step_456_videos_comments' ) );
+        // Commit 3.C.29: Step 5 QC + Packing / Step 6 Delivery execution layer
+        add_action( 'wp_ajax_n88_submit_step5_qc_packing', array( $this, 'ajax_submit_step5_qc_packing' ) );
+        add_action( 'wp_ajax_n88_review_step5_qc_packing', array( $this, 'ajax_review_step5_qc_packing' ) );
+        add_action( 'wp_ajax_n88_submit_step6_delivery', array( $this, 'ajax_submit_step6_delivery' ) );
+        add_action( 'wp_ajax_n88_confirm_step6_delivery', array( $this, 'ajax_confirm_step6_delivery' ) );
+        add_action( 'wp_ajax_n88_supplier_submit_step5_qc_packing', array( $this, 'ajax_supplier_submit_step5_qc_packing' ) );
+        add_action( 'wp_ajax_n88_buyer_review_step5_qc_packing', array( $this, 'ajax_buyer_review_step5_qc_packing' ) );
+        add_action( 'wp_ajax_n88_supplier_submit_step6_delivery', array( $this, 'ajax_supplier_submit_step6_delivery' ) );
+        add_action( 'wp_ajax_n88_buyer_confirm_step6_delivery', array( $this, 'ajax_buyer_confirm_step6_delivery' ) );
 
         // Create custom roles on activation
         add_action( 'init', array( $this, 'create_custom_roles' ) );
@@ -12019,6 +12028,8 @@ class N88_RFQ_Auth {
                         }
                         var supplierEvidenceByStep = data.data.supplier_step_evidence_by_step || {};
                         var step456Videos = data.data.step_456_videos || {};
+                        var step5Execution = data.data.step5_execution || {};
+                        var step6Execution = data.data.step6_execution || {};
                         var validationState = data.data.validation_state || t.validation_state || {};
                         if (isNaN(savedActiveIdx) && validationState && validationState.request && validationState.request.requested_at && (!validationState.supplier || !validationState.supplier.updated_at)) {
                             selectedIdx = 1;
@@ -12163,6 +12174,62 @@ class N88_RFQ_Auth {
                                             block += '</ul>';
                                         }
                                     }
+                                }
+                                if (stepNumber === 5) {
+                                    var qcProofs = Array.isArray(step5Execution.qc_proofs) ? step5Execution.qc_proofs : [];
+                                    var packingProofs = Array.isArray(step5Execution.packing_proofs) ? step5Execution.packing_proofs : [];
+                                    var step5Status = String(step5Execution.status || 'not_started');
+                                    block += '<div style="margin:10px 0; padding:10px; border:1px solid ' + darkBorder + '; border-radius:4px; background:#0e0e0e;">';
+                                    block += '<div style="font-size:11px; color:#fff; margin-bottom:6px;">QC + Packing Status: <span style="color:' + green + '; font-weight:600;">' + escHtml(step5Status.replace(/_/g, ' ')) + '</span></div>';
+                                    if (step5Execution.supplier_note) block += '<div style="font-size:11px; color:' + darkText + '; margin-bottom:6px; white-space:pre-wrap;">Supplier note: ' + escHtml(step5Execution.supplier_note) + '</div>';
+                                    if (qcProofs.length) {
+                                        block += '<div style="font-size:11px; color:#fff; margin-bottom:4px;">QC proofs</div><ul style="margin:0 0 8px 18px; padding:0; font-size:11px;">';
+                                        for (var qpi = 0; qpi < qcProofs.length; qpi++) {
+                                            block += '<li><a href="' + escHtml(qcProofs[qpi].url || '') + '" target="_blank" rel="noopener noreferrer" style="color:' + green + ';">' + escHtml(qcProofs[qpi].title || ('QC Proof ' + (qpi + 1))) + '</a></li>';
+                                        }
+                                        block += '</ul>';
+                                    }
+                                    if (packingProofs.length) {
+                                        block += '<div style="font-size:11px; color:#fff; margin-bottom:4px;">Packing proofs</div><ul style="margin:0 0 8px 18px; padding:0; font-size:11px;">';
+                                        for (var ppi = 0; ppi < packingProofs.length; ppi++) {
+                                            block += '<li><a href="' + escHtml(packingProofs[ppi].url || '') + '" target="_blank" rel="noopener noreferrer" style="color:' + green + ';">' + escHtml(packingProofs[ppi].title || ('Packing Proof ' + (ppi + 1))) + '</a></li>';
+                                        }
+                                        block += '</ul>';
+                                    }
+                                    block += '<div style="display:grid; gap:8px;">';
+                                    block += '<textarea id="n88-step5-supplier-note-' + itemId + '" rows="2" placeholder="QC / packing note (optional)" style="padding:8px; background:#111; color:#fff; border:1px solid ' + darkBorder + '; border-radius:4px; font-size:12px; font-family:monospace;">' + escHtml(step5Execution.supplier_note || '') + '</textarea>';
+                                    block += '<input type="file" id="n88-step5-qc-files-' + itemId + '" multiple style="padding:6px; background:#111; color:#fff; border:1px solid ' + darkBorder + '; border-radius:4px; font-size:11px;" />';
+                                    block += '<input type="file" id="n88-step5-packing-files-' + itemId + '" multiple style="padding:6px; background:#111; color:#fff; border:1px solid ' + darkBorder + '; border-radius:4px; font-size:11px;" />';
+                                    block += '<button type="button" onclick="n88SupplierSubmitStep5QcPacking(' + itemId + ')" style="padding:8px 12px; font-size:11px; background:' + green + '; color:#000; border:none; border-radius:4px; cursor:pointer; font-family:monospace;">Submit QC + Packing</button>';
+                                    block += '</div>';
+                                    block += '</div>';
+                                } else if (stepNumber === 6) {
+                                    var step6Status = String(step6Execution.status || 'not_started');
+                                    var shippingDocs = Array.isArray(step6Execution.shipping_documents) ? step6Execution.shipping_documents : [];
+                                    var step6Blocked = String(step5Execution.status || '') !== 'approved';
+                                    block += '<div style="margin:10px 0; padding:10px; border:1px solid ' + darkBorder + '; border-radius:4px; background:#0e0e0e;">';
+                                    block += '<div style="font-size:11px; color:#fff; margin-bottom:6px;">Delivery Status: <span style="color:' + green + '; font-weight:600;">' + escHtml(step6Status.replace(/_/g, ' ')) + '</span></div>';
+                                    if (step6Execution.tracking_number) block += '<div style="font-size:11px; color:' + darkText + '; margin-bottom:6px;">Tracking #: ' + escHtml(step6Execution.tracking_number) + '</div>';
+                                    if (step6Execution.delivery_notes) block += '<div style="font-size:11px; color:' + darkText + '; margin-bottom:6px; white-space:pre-wrap;">Delivery notes: ' + escHtml(step6Execution.delivery_notes) + '</div>';
+                                    if (shippingDocs.length) {
+                                        block += '<div style="font-size:11px; color:#fff; margin-bottom:4px;">Shipping documents</div><ul style="margin:0 0 8px 18px; padding:0; font-size:11px;">';
+                                        for (var sdi = 0; sdi < shippingDocs.length; sdi++) {
+                                            block += '<li><a href="' + escHtml(shippingDocs[sdi].url || '') + '" target="_blank" rel="noopener noreferrer" style="color:' + green + ';">' + escHtml(shippingDocs[sdi].title || ('Shipping Doc ' + (sdi + 1))) + '</a></li>';
+                                        }
+                                        block += '</ul>';
+                                    }
+                                    if (step6Blocked) {
+                                        block += '<div style="font-size:11px; color:#ffb347;">Step 6 is blocked until Step 5 is approved by buyer.</div>';
+                                    } else {
+                                        block += '<div style="display:grid; gap:8px;">';
+                                        block += '<input type="text" id="n88-step6-tracking-' + itemId + '" value="' + escHtml(step6Execution.tracking_number || '') + '" placeholder="Tracking number" style="padding:8px; background:#111; color:#fff; border:1px solid ' + darkBorder + '; border-radius:4px; font-size:12px;" />';
+                                        block += '<select id="n88-step6-status-' + itemId + '" style="padding:8px; background:#111; color:#fff; border:1px solid ' + darkBorder + '; border-radius:4px; font-size:12px;"><option value="in_transit"' + (step6Status === 'in_transit' ? ' selected' : '') + '>In Transit</option><option value="delivered"' + (step6Status === 'delivered' ? ' selected' : '') + '>Delivered</option></select>';
+                                        block += '<textarea id="n88-step6-notes-' + itemId + '" rows="2" placeholder="Delivery notes (optional)" style="padding:8px; background:#111; color:#fff; border:1px solid ' + darkBorder + '; border-radius:4px; font-size:12px; font-family:monospace;">' + escHtml(step6Execution.delivery_notes || '') + '</textarea>';
+                                        block += '<input type="file" id="n88-step6-docs-' + itemId + '" multiple style="padding:6px; background:#111; color:#fff; border:1px solid ' + darkBorder + '; border-radius:4px; font-size:11px;" />';
+                                        block += '<button type="button" onclick="n88SupplierSubmitStep6Delivery(' + itemId + ')" style="padding:8px 12px; font-size:11px; background:' + green + '; color:#000; border:none; border-radius:4px; cursor:pointer; font-family:monospace;">Submit Delivery Details</button>';
+                                        block += '</div>';
+                                    }
+                                    block += '</div>';
                                 }
                                 block += '<button type="button" onclick="n88SupplierOpenStepVideo456Form(' + itemId + ',' + stepNumber + ');" style="padding: 6px 12px; font-size: 11px; background: #111; color: ' + green + '; border: 1px solid ' + green + '; border-radius: 4px; cursor: pointer; font-family: monospace;">[ Submit Step Video ]</button>';
                                 block += '<div id="n88-supplier-step-video-456-form-wrap" style="display: none; margin-top: 12px; padding: 12px; border: 1px solid ' + darkBorder + '; border-radius: 4px; background: #0a0a0a;"></div></div>';
@@ -12955,6 +13022,64 @@ class N88_RFQ_Auth {
                             btn.textContent = 'Submit';
                         });
                 };
+            };
+
+            window.n88SupplierSubmitStep5QcPacking = function(itemId) {
+                var wrap = document.getElementById('n88-supplier-workflow-timeline-wrap');
+                var noteEl = document.getElementById('n88-step5-supplier-note-' + itemId);
+                var qcEl = document.getElementById('n88-step5-qc-files-' + itemId);
+                var packingEl = document.getElementById('n88-step5-packing-files-' + itemId);
+                var fd = new FormData();
+                fd.append('action', 'n88_supplier_submit_step5_qc_packing');
+                fd.append('item_id', String(itemId));
+                fd.append('_ajax_nonce', '<?php echo esc_js( wp_create_nonce( 'n88_get_item_rfq_state' ) ); ?>');
+                fd.append('supplier_note', noteEl ? noteEl.value : '');
+                if (qcEl && qcEl.files && qcEl.files.length) {
+                    for (var i = 0; i < qcEl.files.length; i++) fd.append('qc_proofs[]', qcEl.files[i]);
+                }
+                if (packingEl && packingEl.files && packingEl.files.length) {
+                    for (var j = 0; j < packingEl.files.length; j++) fd.append('packing_proofs[]', packingEl.files[j]);
+                }
+                fetch('<?php echo esc_url( admin_url( 'admin-ajax.php' ) ); ?>', { method: 'POST', body: fd, credentials: 'same-origin' })
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) {
+                        if (!data.success) {
+                            alert((data.data && data.data.message) || data.message || 'Failed to submit Step 5.');
+                            return;
+                        }
+                        if (wrap) wrap.removeAttribute('data-timeline-loaded');
+                        if (typeof window.n88LoadSupplierWorkflowTimeline === 'function') window.n88LoadSupplierWorkflowTimeline();
+                    })
+                    .catch(function() { alert('Failed to submit Step 5.'); });
+            };
+
+            window.n88SupplierSubmitStep6Delivery = function(itemId) {
+                var wrap = document.getElementById('n88-supplier-workflow-timeline-wrap');
+                var trackingEl = document.getElementById('n88-step6-tracking-' + itemId);
+                var statusEl = document.getElementById('n88-step6-status-' + itemId);
+                var notesEl = document.getElementById('n88-step6-notes-' + itemId);
+                var docsEl = document.getElementById('n88-step6-docs-' + itemId);
+                var fd = new FormData();
+                fd.append('action', 'n88_supplier_submit_step6_delivery');
+                fd.append('item_id', String(itemId));
+                fd.append('_ajax_nonce', '<?php echo esc_js( wp_create_nonce( 'n88_get_item_rfq_state' ) ); ?>');
+                fd.append('tracking_number', trackingEl ? trackingEl.value : '');
+                fd.append('delivery_status', statusEl ? statusEl.value : 'in_transit');
+                fd.append('delivery_notes', notesEl ? notesEl.value : '');
+                if (docsEl && docsEl.files && docsEl.files.length) {
+                    for (var i = 0; i < docsEl.files.length; i++) fd.append('shipping_documents[]', docsEl.files[i]);
+                }
+                fetch('<?php echo esc_url( admin_url( 'admin-ajax.php' ) ); ?>', { method: 'POST', body: fd, credentials: 'same-origin' })
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) {
+                        if (!data.success) {
+                            alert((data.data && data.data.message) || data.message || 'Failed to submit Step 6.');
+                            return;
+                        }
+                        if (wrap) wrap.removeAttribute('data-timeline-loaded');
+                        if (typeof window.n88LoadSupplierWorkflowTimeline === 'function') window.n88LoadSupplierWorkflowTimeline();
+                    })
+                    .catch(function() { alert('Failed to submit Step 6.'); });
             };
 
             // Toggle bid form section inside the modal
@@ -22546,6 +22671,275 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
         );
     }
 
+    private function get_timing_threshold_seconds( $type ) {
+        if ( 'silence_gap' === $type ) {
+            return (int) apply_filters( 'n88_timing_silence_gap_threshold_seconds', 48 * HOUR_IN_SECONDS );
+        }
+        if ( 'response_delay' === $type ) {
+            return (int) apply_filters( 'n88_timing_response_delay_threshold_seconds', 24 * HOUR_IN_SECONDS );
+        }
+        if ( 'stage_delay' === $type ) {
+            return (int) apply_filters( 'n88_timing_stage_delay_threshold_seconds', 72 * HOUR_IN_SECONDS );
+        }
+        return 0;
+    }
+
+    private function normalize_timing_summary( $summary ) {
+        $summary = is_array( $summary ) ? $summary : array();
+        return array(
+            'supplier_response_time'    => isset( $summary['supplier_response_time'] ) && is_array( $summary['supplier_response_time'] ) ? $summary['supplier_response_time'] : array( 'last_seconds' => null, 'avg_seconds' => null, 'count' => 0 ),
+            'buyer_approval_time'       => isset( $summary['buyer_approval_time'] ) && is_array( $summary['buyer_approval_time'] ) ? $summary['buyer_approval_time'] : array( 'last_seconds' => null, 'avg_seconds' => null, 'count' => 0 ),
+            'stage_duration'            => isset( $summary['stage_duration'] ) && is_array( $summary['stage_duration'] ) ? $summary['stage_duration'] : array(),
+            'stage_flow_metrics'        => isset( $summary['stage_flow_metrics'] ) && is_array( $summary['stage_flow_metrics'] ) ? $summary['stage_flow_metrics'] : array(),
+            'idle_time_between_actions' => isset( $summary['idle_time_between_actions'] ) ? ( is_null( $summary['idle_time_between_actions'] ) ? null : max( 0, (int) $summary['idle_time_between_actions'] ) ) : null,
+            'silence_gap_detected'      => ! empty( $summary['silence_gap_detected'] ),
+            'delay_detected'            => ! empty( $summary['delay_detected'] ),
+            'last_supplier_message_at'  => isset( $summary['last_supplier_message_at'] ) ? (string) $summary['last_supplier_message_at'] : '',
+            'last_buyer_message_at'     => isset( $summary['last_buyer_message_at'] ) ? (string) $summary['last_buyer_message_at'] : '',
+            'last_stage_activity_at'    => isset( $summary['last_stage_activity_at'] ) ? (string) $summary['last_stage_activity_at'] : '',
+            'last_stage_key'            => isset( $summary['last_stage_key'] ) ? sanitize_key( (string) $summary['last_stage_key'] ) : '',
+            'waiting_on'                => isset( $summary['waiting_on'] ) ? sanitize_key( (string) $summary['waiting_on'] ) : '',
+            'pending_supplier_since'    => isset( $summary['pending_supplier_since'] ) ? (string) $summary['pending_supplier_since'] : '',
+            'pending_buyer_since'       => isset( $summary['pending_buyer_since'] ) ? (string) $summary['pending_buyer_since'] : '',
+            'last_event_at'             => isset( $summary['last_event_at'] ) ? (string) $summary['last_event_at'] : '',
+            'stage_started_at'          => isset( $summary['stage_started_at'] ) && is_array( $summary['stage_started_at'] ) ? $summary['stage_started_at'] : array(),
+            'updated_at'                => isset( $summary['updated_at'] ) ? (string) $summary['updated_at'] : '',
+        );
+    }
+
+    private function normalize_stage_flow_metric( $metric ) {
+        $metric = is_array( $metric ) ? $metric : array();
+        return array(
+            'supplier_document_submitted_at'    => isset( $metric['supplier_document_submitted_at'] ) ? (string) $metric['supplier_document_submitted_at'] : '',
+            'designer_approved_at'              => isset( $metric['designer_approved_at'] ) ? (string) $metric['designer_approved_at'] : '',
+            'revision_requested_at'             => isset( $metric['revision_requested_at'] ) ? (string) $metric['revision_requested_at'] : '',
+            'supplier_resubmitted_at'           => isset( $metric['supplier_resubmitted_at'] ) ? (string) $metric['supplier_resubmitted_at'] : '',
+            'designer_reapproved_at'            => isset( $metric['designer_reapproved_at'] ) ? (string) $metric['designer_reapproved_at'] : '',
+            'payment_submitted_at'              => isset( $metric['payment_submitted_at'] ) ? (string) $metric['payment_submitted_at'] : '',
+            'payment_confirmed_at'              => isset( $metric['payment_confirmed_at'] ) ? (string) $metric['payment_confirmed_at'] : '',
+            'submit_to_approve_seconds'         => isset( $metric['submit_to_approve_seconds'] ) ? ( is_null( $metric['submit_to_approve_seconds'] ) ? null : max( 0, (int) $metric['submit_to_approve_seconds'] ) ) : null,
+            'approve_to_revision_seconds'       => isset( $metric['approve_to_revision_seconds'] ) ? ( is_null( $metric['approve_to_revision_seconds'] ) ? null : max( 0, (int) $metric['approve_to_revision_seconds'] ) ) : null,
+            'revision_to_resubmit_seconds'      => isset( $metric['revision_to_resubmit_seconds'] ) ? ( is_null( $metric['revision_to_resubmit_seconds'] ) ? null : max( 0, (int) $metric['revision_to_resubmit_seconds'] ) ) : null,
+            'resubmit_to_approve_seconds'       => isset( $metric['resubmit_to_approve_seconds'] ) ? ( is_null( $metric['resubmit_to_approve_seconds'] ) ? null : max( 0, (int) $metric['resubmit_to_approve_seconds'] ) ) : null,
+            'approve_to_payment_submit_seconds' => isset( $metric['approve_to_payment_submit_seconds'] ) ? ( is_null( $metric['approve_to_payment_submit_seconds'] ) ? null : max( 0, (int) $metric['approve_to_payment_submit_seconds'] ) ) : null,
+            'payment_submit_to_payment_confirm_seconds' => isset( $metric['payment_submit_to_payment_confirm_seconds'] ) ? ( is_null( $metric['payment_submit_to_payment_confirm_seconds'] ) ? null : max( 0, (int) $metric['payment_submit_to_payment_confirm_seconds'] ) ) : null,
+            'total_stage_cycle_seconds'         => isset( $metric['total_stage_cycle_seconds'] ) ? ( is_null( $metric['total_stage_cycle_seconds'] ) ? null : max( 0, (int) $metric['total_stage_cycle_seconds'] ) ) : null,
+            'supplier_submission_count'         => isset( $metric['supplier_submission_count'] ) ? max( 0, (int) $metric['supplier_submission_count'] ) : 0,
+            'designer_approval_count'           => isset( $metric['designer_approval_count'] ) ? max( 0, (int) $metric['designer_approval_count'] ) : 0,
+            'revision_request_count'            => isset( $metric['revision_request_count'] ) ? max( 0, (int) $metric['revision_request_count'] ) : 0,
+        );
+    }
+
+    private function persist_stage_flow_timing( $item_id, $stage_key, $event_name, $event_at = null, $context = array() ) {
+        $item_id = absint( $item_id );
+        $stage_key = sanitize_key( (string) $stage_key );
+        if ( ! $item_id || ! $stage_key ) {
+            return;
+        }
+        $meta = $this->get_item_meta_array( $item_id );
+        $validation = isset( $meta['material_validation'] ) && is_array( $meta['material_validation'] ) ? $meta['material_validation'] : array();
+        $summary = $this->normalize_timing_summary( isset( $validation['timing_summary'] ) ? $validation['timing_summary'] : array() );
+        $stage_metrics = isset( $summary['stage_flow_metrics'] ) && is_array( $summary['stage_flow_metrics'] ) ? $summary['stage_flow_metrics'] : array();
+        $metric = $this->normalize_stage_flow_metric( isset( $stage_metrics[ $stage_key ] ) ? $stage_metrics[ $stage_key ] : array() );
+        $event_at = is_string( $event_at ) && trim( $event_at ) ? $event_at : current_time( 'mysql' );
+        $event_ts = $this->summary_iso_to_ts( $event_at );
+        if ( $event_ts <= 0 ) {
+            $event_at = current_time( 'mysql' );
+            $event_ts = $this->summary_iso_to_ts( $event_at );
+        }
+        if ( 'stage_progress_submitted' === $event_name ) {
+            $is_resubmission = ! empty( $context['is_resubmission'] );
+            $metric['supplier_submission_count'] = $metric['supplier_submission_count'] + 1;
+            if ( ! $is_resubmission && '' === $metric['supplier_document_submitted_at'] ) {
+                $metric['supplier_document_submitted_at'] = $event_at;
+            } else {
+                $metric['supplier_resubmitted_at'] = $event_at;
+            }
+            $rev_ts = $this->summary_iso_to_ts( $metric['revision_requested_at'] );
+            if ( $rev_ts > 0 && $event_ts >= $rev_ts ) {
+                $metric['revision_to_resubmit_seconds'] = max( 0, $event_ts - $rev_ts );
+            }
+        } elseif ( 'stage_progress_approved' === $event_name ) {
+            $metric['designer_approval_count'] = $metric['designer_approval_count'] + 1;
+            $resubmit_ts = $this->summary_iso_to_ts( $metric['supplier_resubmitted_at'] );
+            $first_submit_ts = $this->summary_iso_to_ts( $metric['supplier_document_submitted_at'] );
+            if ( $metric['designer_approval_count'] <= 1 ) {
+                $metric['designer_approved_at'] = $event_at;
+                if ( $first_submit_ts > 0 && $event_ts >= $first_submit_ts ) {
+                    $metric['submit_to_approve_seconds'] = max( 0, $event_ts - $first_submit_ts );
+                }
+            } else {
+                $metric['designer_reapproved_at'] = $event_at;
+                if ( $resubmit_ts > 0 && $event_ts >= $resubmit_ts ) {
+                    $metric['resubmit_to_approve_seconds'] = max( 0, $event_ts - $resubmit_ts );
+                }
+            }
+        } elseif ( 'stage_revision_requested' === $event_name ) {
+            $metric['revision_request_count'] = $metric['revision_request_count'] + 1;
+            $metric['revision_requested_at'] = $event_at;
+            $approval_anchor = $this->summary_iso_to_ts( $metric['designer_reapproved_at'] );
+            if ( $approval_anchor <= 0 ) {
+                $approval_anchor = $this->summary_iso_to_ts( $metric['designer_approved_at'] );
+            }
+            if ( $approval_anchor > 0 && $event_ts >= $approval_anchor ) {
+                $metric['approve_to_revision_seconds'] = max( 0, $event_ts - $approval_anchor );
+            }
+        } elseif ( 'stage_payment_submitted' === $event_name ) {
+            $metric['payment_submitted_at'] = $event_at;
+            $approval_anchor = $this->summary_iso_to_ts( $metric['designer_reapproved_at'] );
+            if ( $approval_anchor <= 0 ) {
+                $approval_anchor = $this->summary_iso_to_ts( $metric['designer_approved_at'] );
+            }
+            if ( $approval_anchor > 0 && $event_ts >= $approval_anchor ) {
+                $metric['approve_to_payment_submit_seconds'] = max( 0, $event_ts - $approval_anchor );
+            }
+        } elseif ( 'stage_payment_confirmed' === $event_name ) {
+            $metric['payment_confirmed_at'] = $event_at;
+            $payment_submit_ts = $this->summary_iso_to_ts( $metric['payment_submitted_at'] );
+            if ( $payment_submit_ts > 0 && $event_ts >= $payment_submit_ts ) {
+                $metric['payment_submit_to_payment_confirm_seconds'] = max( 0, $event_ts - $payment_submit_ts );
+            }
+            $first_submit_ts = $this->summary_iso_to_ts( $metric['supplier_document_submitted_at'] );
+            if ( $first_submit_ts > 0 && $event_ts >= $first_submit_ts ) {
+                $metric['total_stage_cycle_seconds'] = max( 0, $event_ts - $first_submit_ts );
+            }
+        }
+        $stage_metrics[ $stage_key ] = $metric;
+        $summary['stage_flow_metrics'] = $stage_metrics;
+        $summary['last_stage_key'] = $stage_key;
+        $summary['last_stage_activity_at'] = $event_at;
+        $summary['updated_at'] = current_time( 'mysql' );
+        $validation['timing_summary'] = $summary;
+        $meta['material_validation'] = $validation;
+        $this->update_item_meta_array( $item_id, $meta );
+    }
+
+    private function summary_iso_to_ts( $value ) {
+        if ( ! is_string( $value ) || '' === trim( $value ) ) {
+            return 0;
+        }
+        $ts = strtotime( $value );
+        return $ts ? (int) $ts : 0;
+    }
+
+    private function summary_increment_metric( $metric, $seconds ) {
+        $metric = is_array( $metric ) ? $metric : array();
+        $seconds = max( 0, (int) $seconds );
+        $count = isset( $metric['count'] ) ? max( 0, (int) $metric['count'] ) : 0;
+        $prev_avg = isset( $metric['avg_seconds'] ) && null !== $metric['avg_seconds'] ? (float) $metric['avg_seconds'] : 0.0;
+        $next_count = $count + 1;
+        $next_avg = ( ( $prev_avg * $count ) + $seconds ) / max( 1, $next_count );
+        return array(
+            'last_seconds' => $seconds,
+            'avg_seconds'  => (int) round( $next_avg ),
+            'count'        => $next_count,
+        );
+    }
+
+    private function persist_timing_summary_event( $item_id, $event_type, $context = array() ) {
+        $item_id = absint( $item_id );
+        if ( ! $item_id ) {
+            return;
+        }
+        $meta = $this->get_item_meta_array( $item_id );
+        $validation = isset( $meta['material_validation'] ) && is_array( $meta['material_validation'] ) ? $meta['material_validation'] : array();
+        $summary = $this->normalize_timing_summary( isset( $validation['timing_summary'] ) ? $validation['timing_summary'] : array() );
+        $now_mysql = current_time( 'mysql' );
+        $now_ts = $this->summary_iso_to_ts( $now_mysql );
+        $event_ts = isset( $context['event_at'] ) ? $this->summary_iso_to_ts( $context['event_at'] ) : 0;
+        if ( $event_ts <= 0 ) {
+            $event_ts = $now_ts;
+        }
+        $event_at = gmdate( 'Y-m-d H:i:s', $event_ts + ( get_option( 'gmt_offset' ) * HOUR_IN_SECONDS ) );
+
+        $last_event_ts = $this->summary_iso_to_ts( $summary['last_event_at'] );
+        if ( $last_event_ts > 0 && $event_ts >= $last_event_ts ) {
+            $idle_seconds = $event_ts - $last_event_ts;
+            $summary['idle_time_between_actions'] = max( 0, (int) $idle_seconds );
+            if ( $idle_seconds >= $this->get_timing_threshold_seconds( 'silence_gap' ) ) {
+                $summary['silence_gap_detected'] = true;
+            }
+        }
+
+        if ( 'message' === $event_type ) {
+            $sender_role = isset( $context['sender_role'] ) ? sanitize_key( (string) $context['sender_role'] ) : '';
+            $is_supplier_msg = ( 'supplier' === $sender_role );
+            $is_buyer_msg = in_array( $sender_role, array( 'designer', 'operator' ), true );
+
+            if ( $is_supplier_msg ) {
+                $pending_supplier_ts = $this->summary_iso_to_ts( $summary['pending_supplier_since'] );
+                if ( $pending_supplier_ts > 0 && $event_ts >= $pending_supplier_ts ) {
+                    $summary['supplier_response_time'] = $this->summary_increment_metric( $summary['supplier_response_time'], $event_ts - $pending_supplier_ts );
+                }
+                $summary['last_supplier_message_at'] = $event_at;
+                $summary['pending_supplier_since'] = '';
+                $summary['pending_buyer_since'] = $event_at;
+                $summary['waiting_on'] = 'buyer';
+            } elseif ( $is_buyer_msg ) {
+                $pending_buyer_ts = $this->summary_iso_to_ts( $summary['pending_buyer_since'] );
+                if ( $pending_buyer_ts > 0 && $event_ts >= $pending_buyer_ts ) {
+                    $summary['buyer_approval_time'] = $this->summary_increment_metric( $summary['buyer_approval_time'], $event_ts - $pending_buyer_ts );
+                }
+                $summary['last_buyer_message_at'] = $event_at;
+                $summary['pending_buyer_since'] = '';
+                $summary['pending_supplier_since'] = $event_at;
+                $summary['waiting_on'] = 'supplier';
+            }
+        } elseif ( 'stage_start' === $event_type ) {
+            $stage_key = isset( $context['stage_key'] ) ? sanitize_key( (string) $context['stage_key'] ) : '';
+            if ( $stage_key ) {
+                $summary['stage_started_at'][ $stage_key ] = $event_at;
+                $summary['last_stage_key'] = $stage_key;
+                $summary['last_stage_activity_at'] = $event_at;
+            }
+        } elseif ( in_array( $event_type, array( 'stage_complete', 'stage_approved', 'stage_payment_confirmed' ), true ) ) {
+            $stage_key = isset( $context['stage_key'] ) ? sanitize_key( (string) $context['stage_key'] ) : '';
+            if ( $stage_key ) {
+                $start_ts = isset( $summary['stage_started_at'][ $stage_key ] ) ? $this->summary_iso_to_ts( $summary['stage_started_at'][ $stage_key ] ) : 0;
+                if ( $start_ts > 0 && $event_ts >= $start_ts ) {
+                    $summary['stage_duration'][ $stage_key ] = max( 0, (int) ( $event_ts - $start_ts ) );
+                    unset( $summary['stage_started_at'][ $stage_key ] );
+                }
+                $summary['last_stage_key'] = $stage_key;
+                $summary['last_stage_activity_at'] = $event_at;
+            }
+            if ( 'stage_approved' === $event_type ) {
+                $summary['waiting_on'] = 'supplier';
+                $summary['pending_supplier_since'] = $event_at;
+                $summary['pending_buyer_since'] = '';
+            } elseif ( 'stage_payment_confirmed' === $event_type ) {
+                $summary['waiting_on'] = '';
+                $summary['pending_supplier_since'] = '';
+                $summary['pending_buyer_since'] = '';
+            }
+        }
+
+        $pending_supplier_ts = $this->summary_iso_to_ts( $summary['pending_supplier_since'] );
+        $pending_buyer_ts = $this->summary_iso_to_ts( $summary['pending_buyer_since'] );
+        $response_delay_threshold = $this->get_timing_threshold_seconds( 'response_delay' );
+        if ( $response_delay_threshold > 0 ) {
+            if ( ( $pending_supplier_ts > 0 && ( $event_ts - $pending_supplier_ts ) >= $response_delay_threshold ) || ( $pending_buyer_ts > 0 && ( $event_ts - $pending_buyer_ts ) >= $response_delay_threshold ) ) {
+                $summary['delay_detected'] = true;
+            }
+        }
+        $stage_delay_threshold = $this->get_timing_threshold_seconds( 'stage_delay' );
+        if ( $stage_delay_threshold > 0 && ! empty( $summary['stage_started_at'] ) && is_array( $summary['stage_started_at'] ) ) {
+            foreach ( $summary['stage_started_at'] as $open_stage_at ) {
+                $open_ts = $this->summary_iso_to_ts( $open_stage_at );
+                if ( $open_ts > 0 && ( $event_ts - $open_ts ) >= $stage_delay_threshold ) {
+                    $summary['delay_detected'] = true;
+                    break;
+                }
+            }
+        }
+
+        $summary['last_event_at'] = $event_at;
+        $summary['updated_at'] = $now_mysql;
+        $validation['timing_summary'] = $summary;
+        $meta['material_validation'] = $validation;
+        $this->update_item_meta_array( $item_id, $meta );
+    }
+
     private function upload_material_validation_attachment( $file, $title_prefix, $mimes = array() ) {
         if ( empty( $file['name'] ) ) {
             return new WP_Error( 'missing_file', 'No file uploaded.' );
@@ -22912,6 +23306,17 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
                 'lite_rowset' => true,
             )
         );
+        $timing_summary = $this->normalize_timing_summary( isset( $validation['timing_summary'] ) ? $validation['timing_summary'] : array() );
+        $minimal_waiting_indicator = '';
+        if ( 'buyer' === $timing_summary['waiting_on'] ) {
+            $minimal_waiting_indicator = 'Waiting on buyer';
+        } elseif ( 'supplier' === $timing_summary['waiting_on'] ) {
+            $minimal_waiting_indicator = 'Waiting on supplier';
+        } elseif ( ! empty( $timing_summary['pending_supplier_since'] ) || ! empty( $timing_summary['pending_buyer_since'] ) ) {
+            $minimal_waiting_indicator = 'Response pending';
+        } elseif ( ! empty( $timing_summary['delay_detected'] ) ) {
+            $minimal_waiting_indicator = 'Stage taking longer than usual';
+        }
         $has_payment_milestones = ! empty( $payment_milestone_summary['enabled'] );
         if ( $can_commit && $has_payment_milestones ) {
             $next_stage = array();
@@ -23039,6 +23444,8 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
             'execution_fee_total'        => $execution_fee_total,
             'payment_milestones'         => $payment_milestone_summary,
             'payment_milestones_enabled' => $has_payment_milestones,
+            'timing_summary'             => $timing_summary,
+            'timing_waiting_indicator'   => $minimal_waiting_indicator,
             'approved_material_codes'    => isset( $meta['approved_material_codes'] ) && is_array( $meta['approved_material_codes'] ) ? array_values( $meta['approved_material_codes'] ) : array(),
             'approved_finish_codes'      => isset( $meta['approved_finish_codes'] ) && is_array( $meta['approved_finish_codes'] ) ? array_values( $meta['approved_finish_codes'] ) : array(),
             'approved_sample_images'     => $this->get_validation_attachment_entries( isset( $meta['approved_sample_images'] ) ? $meta['approved_sample_images'] : array() ),
@@ -34578,6 +34985,8 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
             'item_id'     => $item_id,
             'payload_json'=> array( 'stage_key' => $stage_key ),
         ) );
+        $this->persist_stage_flow_timing( $item_id, $stage_key, 'stage_payment_submitted' );
+        $this->persist_timing_summary_event( $item_id, 'message', array( 'sender_role' => 'designer' ) );
         $this->invalidate_payment_milestone_summary_cache( $item_id );
         wp_send_json_success( $this->build_payment_milestone_summary( $item_id ) );
     }
@@ -34661,6 +35070,10 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
             'item_id'     => $item_id,
             'payload_json'=> array( 'stage_key' => $stage_key, 'state' => 'awaiting_approval' ),
         ) );
+        $is_resubmission = ! empty( $milestone['stage_revision_requested_at'] );
+        $this->persist_stage_flow_timing( $item_id, $stage_key, 'stage_progress_submitted', $submitted_at, array( 'is_resubmission' => $is_resubmission ) );
+        $this->persist_timing_summary_event( $item_id, 'stage_start', array( 'stage_key' => $stage_key ) );
+        $this->persist_timing_summary_event( $item_id, 'message', array( 'sender_role' => 'supplier' ) );
         $this->invalidate_payment_milestone_summary_cache( $item_id );
         wp_send_json_success( $this->build_payment_milestone_summary( $item_id ) );
     }
@@ -34721,6 +35134,9 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
             'item_id'     => $item_id,
             'payload_json'=> array( 'stage_key' => $stage_key, 'state' => 'payment_pending' ),
         ) );
+        $this->persist_stage_flow_timing( $item_id, $stage_key, 'stage_progress_approved' );
+        $this->persist_timing_summary_event( $item_id, 'stage_approved', array( 'stage_key' => $stage_key ) );
+        $this->persist_timing_summary_event( $item_id, 'message', array( 'sender_role' => 'designer' ) );
         $this->invalidate_payment_milestone_summary_cache( $item_id );
         wp_send_json_success( $this->build_payment_milestone_summary( $item_id ) );
     }
@@ -34791,6 +35207,8 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
             'item_id'     => $item_id,
             'payload_json'=> array( 'stage_key' => $stage_key, 'state' => 'revision_requested' ),
         ) );
+        $this->persist_stage_flow_timing( $item_id, $stage_key, 'stage_revision_requested' );
+        $this->persist_timing_summary_event( $item_id, 'message', array( 'sender_role' => 'designer' ) );
         $this->invalidate_payment_milestone_summary_cache( $item_id );
         wp_send_json_success( $this->build_payment_milestone_summary( $item_id ) );
     }
@@ -34849,6 +35267,8 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
             'item_id'     => $item_id,
             'payload_json'=> array( 'stage_key' => $stage_key ),
         ) );
+        $this->persist_stage_flow_timing( $item_id, $stage_key, 'stage_payment_confirmed' );
+        $this->persist_timing_summary_event( $item_id, 'stage_payment_confirmed', array( 'stage_key' => $stage_key ) );
         $this->invalidate_payment_milestone_summary_cache( $item_id );
         wp_send_json_success( $this->build_payment_milestone_summary( $item_id ) );
     }
@@ -35578,6 +35998,16 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
                 'timestamp' => current_time( 'mysql' ),
             ),
         ) );
+        if ( in_array( $thread_type, array( 'designer_supplier', 'supplier_operator', 'designer_operator' ), true ) ) {
+            $this->persist_timing_summary_event(
+                $item_id,
+                'message',
+                array(
+                    'sender_role' => $sender_role,
+                    'event_at'    => isset( $insert_row['created_at'] ) ? $insert_row['created_at'] : current_time( 'mysql' ),
+                )
+            );
+        }
 
         $response = array(
             'message_id'    => $message_id,
@@ -37174,6 +37604,8 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
             $validation_state = $this->build_material_validation_state( $item_id );
         }
 
+        $step_56_execution = $this->get_step_56_execution_state( $item_id, null, $validation_state );
+
         return array(
             'timeline'                       => $timeline,
             'is_operator'                    => $is_operator,
@@ -37184,6 +37616,89 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
             'step_456_videos'                => $step_456_videos,
             'step_456_comments'              => $step_456_comments,
             'validation_state'               => $validation_state,
+            'step_56_execution'              => $step_56_execution,
+        );
+    }
+
+    private function get_step_56_execution_state( $item_id, $meta = null, $validation_state = null ) {
+        $meta = is_array( $meta ) ? $meta : $this->get_item_meta_array( $item_id );
+        if ( null === $validation_state ) {
+            $validation_state = $this->build_material_validation_state( $item_id, $meta );
+        }
+        $validation = isset( $meta['material_validation'] ) && is_array( $meta['material_validation'] ) ? $meta['material_validation'] : array();
+        $post_prod  = isset( $validation['post_production'] ) && is_array( $validation['post_production'] ) ? $validation['post_production'] : array();
+        if ( empty( $post_prod ) && isset( $meta['step_execution'] ) && is_array( $meta['step_execution'] ) ) {
+            $post_prod = $meta['step_execution'];
+        }
+        $step5      = isset( $post_prod['step5'] ) && is_array( $post_prod['step5'] ) ? $post_prod['step5'] : array();
+        $step6      = isset( $post_prod['step6'] ) && is_array( $post_prod['step6'] ) ? $post_prod['step6'] : array();
+
+        $step5_status = isset( $step5['status'] ) ? sanitize_key( (string) $step5['status'] ) : 'not_started';
+        if ( ! in_array( $step5_status, array( 'not_started', 'in_progress', 'submitted', 'approved', 'revision_requested' ), true ) ) {
+            $step5_status = 'not_started';
+        }
+        $step6_status = isset( $step6['status'] ) ? sanitize_key( (string) $step6['status'] ) : 'not_started';
+        if ( ! in_array( $step6_status, array( 'not_started', 'in_transit', 'delivered', 'confirmed_complete' ), true ) ) {
+            $step6_status = 'not_started';
+        }
+
+        $step5_qc_ids   = isset( $step5['qc_proof_file_ids'] ) && is_array( $step5['qc_proof_file_ids'] ) ? array_values( array_unique( array_map( 'absint', $step5['qc_proof_file_ids'] ) ) ) : array();
+        $step5_pack_ids = isset( $step5['packing_proof_file_ids'] ) && is_array( $step5['packing_proof_file_ids'] ) ? array_values( array_unique( array_map( 'absint', $step5['packing_proof_file_ids'] ) ) ) : array();
+        $step6_doc_ids  = array();
+        if ( isset( $step6['shipping_document_file_ids'] ) && is_array( $step6['shipping_document_file_ids'] ) ) {
+            $step6_doc_ids = array_values( array_unique( array_map( 'absint', $step6['shipping_document_file_ids'] ) ) );
+        } elseif ( isset( $step6['shipping_document_ids'] ) && is_array( $step6['shipping_document_ids'] ) ) {
+            $step6_doc_ids = array_values( array_unique( array_map( 'absint', $step6['shipping_document_ids'] ) ) );
+        }
+
+        return array(
+            'step5' => array(
+                'status'               => $step5_status,
+                'qc_proof_files'       => $this->get_validation_attachment_entries( $step5_qc_ids ),
+                'packing_proof_files'  => $this->get_validation_attachment_entries( $step5_pack_ids ),
+                'buyer_note'           => isset( $step5['buyer_note'] ) ? sanitize_textarea_field( $step5['buyer_note'] ) : '',
+                'submitted_at'         => isset( $step5['submitted_at'] ) ? $step5['submitted_at'] : null,
+                'reviewed_at'          => isset( $step5['reviewed_at'] ) ? $step5['reviewed_at'] : null,
+                'approved_at'          => isset( $step5['approved_at'] ) ? $step5['approved_at'] : null,
+                'revision_requested_at' => isset( $step5['revision_requested_at'] ) ? $step5['revision_requested_at'] : null,
+            ),
+            'step6' => array(
+                'status'                  => $step6_status,
+                'tracking_number'         => isset( $step6['tracking_number'] ) ? sanitize_text_field( $step6['tracking_number'] ) : '',
+                'shipping_document_files' => $this->get_validation_attachment_entries( $step6_doc_ids ),
+                'delivery_notes'          => isset( $step6['delivery_notes'] ) ? sanitize_textarea_field( $step6['delivery_notes'] ) : '',
+                'submitted_at'            => isset( $step6['submitted_at'] ) ? $step6['submitted_at'] : null,
+                'delivered_at'            => isset( $step6['delivered_at'] ) ? $step6['delivered_at'] : null,
+                'confirmed_complete_at'   => isset( $step6['confirmed_complete_at'] ) ? $step6['confirmed_complete_at'] : null,
+            ),
+            'step6_blocked_until_step5_approved' => ( 'approved' !== $step5_status ),
+            'workflow_ready' => ! empty( $validation_state['can_commit'] ),
+        );
+    }
+
+    private function get_step_execution_state( $item_id, $meta = null ) {
+        $normalized = $this->get_step_56_execution_state( $item_id, $meta );
+        $step5 = isset( $normalized['step5'] ) && is_array( $normalized['step5'] ) ? $normalized['step5'] : array();
+        $step6 = isset( $normalized['step6'] ) && is_array( $normalized['step6'] ) ? $normalized['step6'] : array();
+        return array(
+            'step5' => array(
+                'status' => isset( $step5['status'] ) ? $step5['status'] : 'not_started',
+                'qc_proof_file_ids' => array_values( array_map( 'absint', wp_list_pluck( isset( $step5['qc_proof_files'] ) ? (array) $step5['qc_proof_files'] : array(), 'id' ) ) ),
+                'packing_proof_file_ids' => array_values( array_map( 'absint', wp_list_pluck( isset( $step5['packing_proof_files'] ) ? (array) $step5['packing_proof_files'] : array(), 'id' ) ) ),
+                'buyer_note' => isset( $step5['buyer_note'] ) ? $step5['buyer_note'] : '',
+                'submitted_at' => isset( $step5['submitted_at'] ) ? $step5['submitted_at'] : null,
+                'approved_at' => isset( $step5['approved_at'] ) ? $step5['approved_at'] : null,
+                'revision_requested_at' => isset( $step5['revision_requested_at'] ) ? $step5['revision_requested_at'] : null,
+            ),
+            'step6' => array(
+                'status' => isset( $step6['status'] ) ? $step6['status'] : 'not_started',
+                'tracking_number' => isset( $step6['tracking_number'] ) ? $step6['tracking_number'] : '',
+                'shipping_document_ids' => array_values( array_map( 'absint', wp_list_pluck( isset( $step6['shipping_document_files'] ) ? (array) $step6['shipping_document_files'] : array(), 'id' ) ) ),
+                'delivery_notes' => isset( $step6['delivery_notes'] ) ? $step6['delivery_notes'] : '',
+                'submitted_at' => isset( $step6['submitted_at'] ) ? $step6['submitted_at'] : null,
+                'delivered_at' => isset( $step6['delivered_at'] ) ? $step6['delivered_at'] : null,
+                'confirmed_complete_at' => isset( $step6['confirmed_complete_at'] ) ? $step6['confirmed_complete_at'] : null,
+            ),
         );
     }
 
@@ -37236,6 +37751,7 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
         }
         $result = N88_Item_Timeline::start_step( $item_id, $step_number, $current_user->ID );
         if ( ! empty( $result['success'] ) ) {
+            $this->persist_timing_summary_event( $item_id, 'stage_start', array( 'stage_key' => 'step_' . $step_number ) );
             wp_send_json_success( array( 'message' => $result['message'] ) );
         }
         wp_send_json_error( array( 'message' => isset( $result['message'] ) ? $result['message'] : 'Action failed.' ) );
@@ -37276,6 +37792,7 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
         }
         $result = N88_Item_Timeline::complete_step( $item_id, $step_number, $current_user->ID, $evidence_override );
         if ( ! empty( $result['success'] ) ) {
+            $this->persist_timing_summary_event( $item_id, 'stage_complete', array( 'stage_key' => 'step_' . $step_number ) );
             wp_send_json_success( array( 'message' => $result['message'] ) );
         }
         wp_send_json_error( array(
@@ -37852,6 +38369,317 @@ if ( $existing_bid['status'] === 'submitted' || $existing_bid['status'] === 'awa
             }
         }
         wp_send_json_success( $out );
+    }
+
+    private function upload_step_execution_attachment( $file, $title_prefix = '' ) {
+        if ( empty( $file['name'] ) ) {
+            return new WP_Error( 'n88_empty_file', 'No file uploaded.' );
+        }
+        require_once ABSPATH . 'wp-admin/includes/file.php';
+        require_once ABSPATH . 'wp-admin/includes/media.php';
+        require_once ABSPATH . 'wp-admin/includes/image.php';
+
+        $overrides = array( 'test_form' => false );
+        $uploaded  = wp_handle_upload( $file, $overrides );
+        if ( ! is_array( $uploaded ) || ! empty( $uploaded['error'] ) ) {
+            return new WP_Error( 'n88_upload_failed', isset( $uploaded['error'] ) ? $uploaded['error'] : 'Upload failed.' );
+        }
+
+        $attachment = array(
+            'post_mime_type' => $uploaded['type'],
+            'post_title'     => sanitize_text_field( trim( $title_prefix . ' ' . pathinfo( (string) $file['name'], PATHINFO_FILENAME ) ) ),
+            'post_content'   => '',
+            'post_status'    => 'inherit',
+        );
+        $attachment_id = wp_insert_attachment( $attachment, $uploaded['file'] );
+        if ( is_wp_error( $attachment_id ) ) {
+            return $attachment_id;
+        }
+        $meta = wp_generate_attachment_metadata( $attachment_id, $uploaded['file'] );
+        if ( is_array( $meta ) ) {
+            wp_update_attachment_metadata( $attachment_id, $meta );
+        }
+
+        return array(
+            'attachment_id' => (int) $attachment_id,
+            'url'           => wp_get_attachment_url( $attachment_id ),
+        );
+    }
+
+    public function ajax_supplier_submit_step5_qc_packing() {
+        check_ajax_referer( 'n88_get_item_rfq_state', '_ajax_nonce' );
+        if ( ! is_user_logged_in() ) {
+            wp_send_json_error( array( 'message' => 'Authentication required.' ) );
+        }
+        $current_user = wp_get_current_user();
+        $is_supplier  = in_array( 'n88_supplier_admin', (array) $current_user->roles, true ) || in_array( 'n88_supplier', (array) $current_user->roles, true ) || in_array( 'supplier', (array) $current_user->roles, true );
+        $item_id      = isset( $_POST['item_id'] ) ? absint( $_POST['item_id'] ) : 0;
+        if ( ! $is_supplier || ! $item_id || ! $this->supplier_has_route_to_item( $item_id, $current_user->ID ) ) {
+            wp_send_json_error( array( 'message' => 'Access denied.' ), 403 );
+        }
+
+        $meta  = $this->get_item_meta_array( $item_id );
+        $state = $this->get_step_execution_state( $item_id, $meta );
+        $now   = current_time( 'mysql' );
+
+        $qc_ids      = isset( $state['step5']['qc_proof_file_ids'] ) ? $state['step5']['qc_proof_file_ids'] : array();
+        $packing_ids = isset( $state['step5']['packing_proof_file_ids'] ) ? $state['step5']['packing_proof_file_ids'] : array();
+
+        if ( ! empty( $_FILES['qc_proofs'] ) && ! empty( $_FILES['qc_proofs']['name'] ) ) {
+            foreach ( array_keys( (array) $_FILES['qc_proofs']['name'] ) as $idx ) {
+                if ( empty( $_FILES['qc_proofs']['name'][ $idx ] ) ) {
+                    continue;
+                }
+                $file = array(
+                    'name'     => $_FILES['qc_proofs']['name'][ $idx ],
+                    'type'     => $_FILES['qc_proofs']['type'][ $idx ],
+                    'tmp_name' => $_FILES['qc_proofs']['tmp_name'][ $idx ],
+                    'error'    => $_FILES['qc_proofs']['error'][ $idx ],
+                    'size'     => $_FILES['qc_proofs']['size'][ $idx ],
+                );
+                $upload = $this->upload_step_execution_attachment( $file, 'Step5 QC Proof' );
+                if ( is_wp_error( $upload ) ) {
+                    wp_send_json_error( array( 'message' => $upload->get_error_message() ) );
+                }
+                $qc_ids[] = (int) $upload['attachment_id'];
+            }
+        }
+        if ( ! empty( $_FILES['packing_proofs'] ) && ! empty( $_FILES['packing_proofs']['name'] ) ) {
+            foreach ( array_keys( (array) $_FILES['packing_proofs']['name'] ) as $idx ) {
+                if ( empty( $_FILES['packing_proofs']['name'][ $idx ] ) ) {
+                    continue;
+                }
+                $file = array(
+                    'name'     => $_FILES['packing_proofs']['name'][ $idx ],
+                    'type'     => $_FILES['packing_proofs']['type'][ $idx ],
+                    'tmp_name' => $_FILES['packing_proofs']['tmp_name'][ $idx ],
+                    'error'    => $_FILES['packing_proofs']['error'][ $idx ],
+                    'size'     => $_FILES['packing_proofs']['size'][ $idx ],
+                );
+                $upload = $this->upload_step_execution_attachment( $file, 'Step5 Packing Proof' );
+                if ( is_wp_error( $upload ) ) {
+                    wp_send_json_error( array( 'message' => $upload->get_error_message() ) );
+                }
+                $packing_ids[] = (int) $upload['attachment_id'];
+            }
+        }
+
+        $status = ( ! empty( $qc_ids ) || ! empty( $packing_ids ) ) ? 'submitted' : 'in_progress';
+        $meta['step_execution']['step5'] = array(
+            'status'                => $status,
+            'qc_proof_file_ids'     => array_values( array_unique( array_map( 'absint', $qc_ids ) ) ),
+            'packing_proof_file_ids'=> array_values( array_unique( array_map( 'absint', $packing_ids ) ) ),
+            'supplier_note'         => sanitize_textarea_field( wp_unslash( isset( $_POST['supplier_note'] ) ? $_POST['supplier_note'] : '' ) ),
+            'buyer_note'            => isset( $state['step5']['buyer_note'] ) ? $state['step5']['buyer_note'] : '',
+            'submitted_at'          => 'submitted' === $status ? $now : ( isset( $state['step5']['submitted_at'] ) ? $state['step5']['submitted_at'] : null ),
+            'approved_at'           => null,
+            'revision_requested_at' => null,
+            'updated_at'            => $now,
+            'supplier_id'           => (int) $current_user->ID,
+            'buyer_id'              => isset( $state['step5']['buyer_id'] ) ? (int) $state['step5']['buyer_id'] : 0,
+        );
+        if ( false === $this->update_item_meta_array( $item_id, $meta ) ) {
+            wp_send_json_error( array( 'message' => 'Failed to save Step 5 submission.' ) );
+        }
+        if ( function_exists( 'n88_log_event' ) ) {
+            n88_log_event( 'step5_qc_packing_submitted', 'item', array(
+                'item_id'      => $item_id,
+                'object_id'    => $item_id,
+                'payload_json' => array(
+                    'item_id'           => $item_id,
+                    'supplier_id'       => (int) $current_user->ID,
+                    'qc_proof_count'    => count( $meta['step_execution']['step5']['qc_proof_file_ids'] ),
+                    'packing_proof_count' => count( $meta['step_execution']['step5']['packing_proof_file_ids'] ),
+                    'status'            => $status,
+                    'timestamp'         => $now,
+                ),
+            ) );
+        }
+        wp_send_json_success( array(
+            'message'         => 'Step 5 QC + packing submission saved.',
+            'step5_execution' => $this->get_step_execution_state( $item_id, $meta )['step5'],
+        ) );
+    }
+
+    public function ajax_buyer_review_step5_qc_packing() {
+        check_ajax_referer( 'n88_get_item_rfq_state', '_ajax_nonce' );
+        $item_id = isset( $_POST['item_id'] ) ? absint( $_POST['item_id'] ) : 0;
+        if ( ! $item_id || ! $this->user_is_designer_owner_of_item( $item_id ) ) {
+            wp_send_json_error( array( 'message' => 'Access denied.' ), 403 );
+        }
+        $decision = sanitize_key( wp_unslash( isset( $_POST['decision'] ) ? $_POST['decision'] : '' ) );
+        if ( ! in_array( $decision, array( 'approve', 'revise' ), true ) ) {
+            wp_send_json_error( array( 'message' => 'Invalid decision.' ) );
+        }
+        $meta  = $this->get_item_meta_array( $item_id );
+        $state = $this->get_step_execution_state( $item_id, $meta );
+        $now   = current_time( 'mysql' );
+        $meta['step_execution']['step5'] = array_merge(
+            isset( $state['step5'] ) ? $state['step5'] : array(),
+            array(
+                'status'                => 'approve' === $decision ? 'approved' : 'revision_requested',
+                'buyer_note'            => sanitize_textarea_field( wp_unslash( isset( $_POST['buyer_note'] ) ? $_POST['buyer_note'] : '' ) ),
+                'approved_at'           => 'approve' === $decision ? $now : null,
+                'revision_requested_at' => 'revise' === $decision ? $now : null,
+                'updated_at'            => $now,
+                'buyer_id'              => get_current_user_id(),
+            )
+        );
+        if ( false === $this->update_item_meta_array( $item_id, $meta ) ) {
+            wp_send_json_error( array( 'message' => 'Failed to update Step 5 review.' ) );
+        }
+        if ( function_exists( 'n88_log_event' ) ) {
+            n88_log_event( 'approve' === $decision ? 'step5_qc_packing_approved' : 'step5_qc_packing_revision_requested', 'item', array(
+                'item_id'      => $item_id,
+                'object_id'    => $item_id,
+                'payload_json' => array(
+                    'item_id'    => $item_id,
+                    'buyer_id'   => get_current_user_id(),
+                    'decision'   => $decision,
+                    'timestamp'  => $now,
+                ),
+            ) );
+        }
+        wp_send_json_success( array(
+            'message'         => 'approve' === $decision ? 'Step 5 approved.' : 'Step 5 revision requested.',
+            'step5_execution' => $this->get_step_execution_state( $item_id, $meta )['step5'],
+        ) );
+    }
+
+    public function ajax_supplier_submit_step6_delivery() {
+        check_ajax_referer( 'n88_get_item_rfq_state', '_ajax_nonce' );
+        if ( ! is_user_logged_in() ) {
+            wp_send_json_error( array( 'message' => 'Authentication required.' ) );
+        }
+        $current_user = wp_get_current_user();
+        $is_supplier  = in_array( 'n88_supplier_admin', (array) $current_user->roles, true ) || in_array( 'n88_supplier', (array) $current_user->roles, true ) || in_array( 'supplier', (array) $current_user->roles, true );
+        $item_id      = isset( $_POST['item_id'] ) ? absint( $_POST['item_id'] ) : 0;
+        if ( ! $is_supplier || ! $item_id || ! $this->supplier_has_route_to_item( $item_id, $current_user->ID ) ) {
+            wp_send_json_error( array( 'message' => 'Access denied.' ), 403 );
+        }
+
+        $meta  = $this->get_item_meta_array( $item_id );
+        $state = $this->get_step_execution_state( $item_id, $meta );
+        if ( 'approved' !== $state['step5']['status'] ) {
+            wp_send_json_error( array( 'message' => 'Step 6 is blocked until Step 5 is approved.', 'blocked' => true ), 409 );
+        }
+
+        $now = current_time( 'mysql' );
+        $shipping_doc_ids = isset( $state['step6']['shipping_document_ids'] ) ? $state['step6']['shipping_document_ids'] : array();
+        if ( ! empty( $_FILES['shipping_documents'] ) && ! empty( $_FILES['shipping_documents']['name'] ) ) {
+            foreach ( array_keys( (array) $_FILES['shipping_documents']['name'] ) as $idx ) {
+                if ( empty( $_FILES['shipping_documents']['name'][ $idx ] ) ) {
+                    continue;
+                }
+                $file = array(
+                    'name'     => $_FILES['shipping_documents']['name'][ $idx ],
+                    'type'     => $_FILES['shipping_documents']['type'][ $idx ],
+                    'tmp_name' => $_FILES['shipping_documents']['tmp_name'][ $idx ],
+                    'error'    => $_FILES['shipping_documents']['error'][ $idx ],
+                    'size'     => $_FILES['shipping_documents']['size'][ $idx ],
+                );
+                $upload = $this->upload_step_execution_attachment( $file, 'Step6 Shipping Document' );
+                if ( is_wp_error( $upload ) ) {
+                    wp_send_json_error( array( 'message' => $upload->get_error_message() ) );
+                }
+                $shipping_doc_ids[] = (int) $upload['attachment_id'];
+            }
+        }
+        $delivery_status = sanitize_key( wp_unslash( isset( $_POST['delivery_status'] ) ? $_POST['delivery_status'] : '' ) );
+        if ( ! in_array( $delivery_status, array( 'in_transit', 'delivered' ), true ) ) {
+            $delivery_status = 'in_transit';
+        }
+        $meta['step_execution']['step6'] = array(
+            'status'                => $delivery_status,
+            'tracking_number'       => sanitize_text_field( wp_unslash( isset( $_POST['tracking_number'] ) ? $_POST['tracking_number'] : '' ) ),
+            'shipping_document_ids' => array_values( array_unique( array_map( 'absint', $shipping_doc_ids ) ) ),
+            'delivery_notes'        => sanitize_textarea_field( wp_unslash( isset( $_POST['delivery_notes'] ) ? $_POST['delivery_notes'] : '' ) ),
+            'submitted_at'          => isset( $state['step6']['submitted_at'] ) ? $state['step6']['submitted_at'] : $now,
+            'delivered_at'          => 'delivered' === $delivery_status ? $now : null,
+            'confirmed_complete_at' => isset( $state['step6']['confirmed_complete_at'] ) ? $state['step6']['confirmed_complete_at'] : null,
+            'updated_at'            => $now,
+            'supplier_id'           => (int) $current_user->ID,
+            'buyer_id'              => isset( $state['step6']['buyer_id'] ) ? (int) $state['step6']['buyer_id'] : 0,
+        );
+        if ( false === $this->update_item_meta_array( $item_id, $meta ) ) {
+            wp_send_json_error( array( 'message' => 'Failed to save Step 6 delivery update.' ) );
+        }
+        if ( function_exists( 'n88_log_event' ) ) {
+            n88_log_event( 'step6_delivery_submitted', 'item', array(
+                'item_id'      => $item_id,
+                'object_id'    => $item_id,
+                'payload_json' => array(
+                    'item_id'          => $item_id,
+                    'supplier_id'      => (int) $current_user->ID,
+                    'delivery_status'  => $delivery_status,
+                    'tracking_number'  => $meta['step_execution']['step6']['tracking_number'],
+                    'document_count'   => count( $meta['step_execution']['step6']['shipping_document_ids'] ),
+                    'timestamp'        => $now,
+                ),
+            ) );
+        }
+        wp_send_json_success( array(
+            'message'         => 'Step 6 delivery details saved.',
+            'step6_execution' => $this->get_step_execution_state( $item_id, $meta )['step6'],
+        ) );
+    }
+
+    public function ajax_buyer_confirm_step6_delivery() {
+        check_ajax_referer( 'n88_get_item_rfq_state', '_ajax_nonce' );
+        $item_id = isset( $_POST['item_id'] ) ? absint( $_POST['item_id'] ) : 0;
+        if ( ! $item_id || ! $this->user_is_designer_owner_of_item( $item_id ) ) {
+            wp_send_json_error( array( 'message' => 'Access denied.' ), 403 );
+        }
+        $meta  = $this->get_item_meta_array( $item_id );
+        $state = $this->get_step_execution_state( $item_id, $meta );
+        if ( 'approved' !== $state['step5']['status'] ) {
+            wp_send_json_error( array( 'message' => 'Step 6 cannot be confirmed before Step 5 approval.', 'blocked' => true ), 409 );
+        }
+        $now = current_time( 'mysql' );
+        $meta['step_execution']['step6'] = array_merge(
+            isset( $state['step6'] ) ? $state['step6'] : array(),
+            array(
+                'status'                => 'confirmed_complete',
+                'confirmed_complete_at' => $now,
+                'updated_at'            => $now,
+                'buyer_id'              => get_current_user_id(),
+            )
+        );
+        if ( false === $this->update_item_meta_array( $item_id, $meta ) ) {
+            wp_send_json_error( array( 'message' => 'Failed to confirm Step 6.' ) );
+        }
+        if ( function_exists( 'n88_log_event' ) ) {
+            n88_log_event( 'step6_delivery_confirmed_complete', 'item', array(
+                'item_id'      => $item_id,
+                'object_id'    => $item_id,
+                'payload_json' => array(
+                    'item_id'    => $item_id,
+                    'buyer_id'   => get_current_user_id(),
+                    'timestamp'  => $now,
+                ),
+            ) );
+        }
+        wp_send_json_success( array(
+            'message'         => 'Delivery confirmed complete.',
+            'step6_execution' => $this->get_step_execution_state( $item_id, $meta )['step6'],
+        ) );
+    }
+
+    // Compatibility wrappers for Step 5/6 action aliases.
+    public function ajax_submit_step5_qc_packing() {
+        return $this->ajax_supplier_submit_step5_qc_packing();
+    }
+
+    public function ajax_review_step5_qc_packing() {
+        return $this->ajax_buyer_review_step5_qc_packing();
+    }
+
+    public function ajax_submit_step6_delivery() {
+        return $this->ajax_supplier_submit_step6_delivery();
+    }
+
+    public function ajax_confirm_step6_delivery() {
+        return $this->ajax_buyer_confirm_step6_delivery();
     }
 
     /**

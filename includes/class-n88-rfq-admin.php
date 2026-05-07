@@ -25978,6 +25978,9 @@ class N88_RFQ_Admin {
                                                             var nonceEvidence = '<?php echo esc_js( wp_create_nonce( 'n88_timeline_step_evidence' ) ); ?>';
                                                             var nonceRfq = (window.n88BoardNonce && window.n88BoardNonce.nonce_get_item_rfq_state) || (window.n88BoardData && window.n88BoardData.nonce) || '<?php echo esc_js( wp_create_nonce( 'n88_get_item_rfq_state' ) ); ?>';
                                                             var ajaxUrlOp = (window.n88BoardData && window.n88BoardData.ajaxUrl) || (typeof ajaxurl !== 'undefined' ? ajaxurl : '<?php echo esc_url( admin_url( 'admin-ajax.php' ) ); ?>');
+                                                            var step5Execution = timelineData.step5_execution || {};
+                                                            var step6Execution = timelineData.step6_execution || {};
+                                                            var step5Approved = String(step5Execution.status || '') === 'approved';
                                                             return React.createElement('div', { style: { marginTop: '12px', paddingTop: '12px', borderTop: '1px solid ' + darkBorder } },
                                                                 React.createElement('div', { style: { marginBottom: '10px', border: '1px solid #2e2e2e', borderRadius: '4px', background: '#101010', overflow: 'hidden' } },
                                                                     React.createElement('div', { style: { padding: '8px 10px', fontSize: '10px', color: '#ff4d9a', fontWeight: 700, letterSpacing: '0.7px', textTransform: 'uppercase', borderBottom: '1px solid #2e2e2e' } }, 'Guidance'),
@@ -26054,6 +26057,62 @@ class N88_RFQ_Admin {
                                                                         },
                                                                         style: { marginTop: '6px', padding: '6px 12px', fontSize: '11px', background: greenAccent, color: '#000', border: 'none', borderRadius: '4px', cursor: 'pointer', fontFamily: 'monospace' }
                                                                     }, 'Submit Comment')
+                                                                ) : null,
+                                                                (!isOperatorTimeline && s.step_number === 5) ? React.createElement('div', { style: { marginTop: '12px', padding: '10px', border: '1px solid ' + darkBorder, borderRadius: '4px', background: '#101010' } },
+                                                                    React.createElement('div', { style: { fontSize: '12px', fontWeight: '600', color: greenAccent, marginBottom: '8px' } }, 'QC + Packing Review'),
+                                                                    React.createElement('div', { style: { fontSize: '11px', color: darkText, marginBottom: '6px' } }, 'Status: ' + String(step5Execution.status || 'not_started').replace(/_/g, ' ')),
+                                                                    step5Execution.supplier_note ? React.createElement('div', { style: { fontSize: '11px', color: darkText, marginBottom: '6px', whiteSpace: 'pre-wrap' } }, 'Supplier note: ' + step5Execution.supplier_note) : null,
+                                                                    Array.isArray(step5Execution.qc_proofs) && step5Execution.qc_proofs.length ? React.createElement('div', { style: { marginBottom: '6px' } },
+                                                                        React.createElement('div', { style: { fontSize: '11px', color: '#fff' } }, 'QC Proofs'),
+                                                                        React.createElement('ul', { style: { margin: '4px 0 0 16px', padding: 0, fontSize: '11px' } }, step5Execution.qc_proofs.map(function(f, idx) {
+                                                                            return React.createElement('li', { key: 'qc-proof-' + idx }, React.createElement('a', { href: f.url, target: '_blank', rel: 'noopener noreferrer', style: { color: greenAccent } }, f.title || ('QC Proof ' + (idx + 1))));
+                                                                        }))
+                                                                    ) : null,
+                                                                    Array.isArray(step5Execution.packing_proofs) && step5Execution.packing_proofs.length ? React.createElement('div', { style: { marginBottom: '8px' } },
+                                                                        React.createElement('div', { style: { fontSize: '11px', color: '#fff' } }, 'Packing Proofs'),
+                                                                        React.createElement('ul', { style: { margin: '4px 0 0 16px', padding: 0, fontSize: '11px' } }, step5Execution.packing_proofs.map(function(f, idx) {
+                                                                            return React.createElement('li', { key: 'pack-proof-' + idx }, React.createElement('a', { href: f.url, target: '_blank', rel: 'noopener noreferrer', style: { color: greenAccent } }, f.title || ('Packing Proof ' + (idx + 1))));
+                                                                        }))
+                                                                    ) : null,
+                                                                    React.createElement('textarea', { id: 'n88-step5-buyer-note-' + String(itemId), rows: 2, placeholder: 'Buyer note (optional)', style: { width: '100%', background: '#111', color: '#ddd', border: '1px solid ' + darkBorder, borderRadius: '4px', padding: '6px', marginBottom: '8px', fontSize: '11px' } }),
+                                                                    React.createElement('div', { style: { display: 'flex', gap: '8px' } },
+                                                                        React.createElement('button', { type: 'button', onClick: function() {
+                                                                            var noteEl = document.getElementById('n88-step5-buyer-note-' + String(itemId));
+                                                                            var fd = new FormData();
+                                                                            fd.append('action', 'n88_buyer_review_step5_qc_packing');
+                                                                            fd.append('item_id', String(itemId));
+                                                                            fd.append('decision', 'approve');
+                                                                            fd.append('buyer_note', noteEl ? noteEl.value : '');
+                                                                            fd.append('_ajax_nonce', nonceRfq);
+                                                                            fetch(ajaxUrlOp, { method: 'POST', body: fd }).then(function(r) { return r.json(); }).then(function(res) { if (res.success) { if (typeof fetchTimeline === 'function') fetchTimeline(); try { window.dispatchEvent(new CustomEvent('n88-board-refresh-status')); } catch (e) {} } else { alert((res.data && res.data.message) || res.message || 'Failed to approve Step 5.'); } });
+                                                                        }, style: { padding: '6px 10px', fontSize: '11px', background: '#0f5132', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' } }, 'Approve QC'),
+                                                                        React.createElement('button', { type: 'button', onClick: function() {
+                                                                            var noteEl = document.getElementById('n88-step5-buyer-note-' + String(itemId));
+                                                                            var fd = new FormData();
+                                                                            fd.append('action', 'n88_buyer_review_step5_qc_packing');
+                                                                            fd.append('item_id', String(itemId));
+                                                                            fd.append('decision', 'revise');
+                                                                            fd.append('buyer_note', noteEl ? noteEl.value : '');
+                                                                            fd.append('_ajax_nonce', nonceRfq);
+                                                                            fetch(ajaxUrlOp, { method: 'POST', body: fd }).then(function(r) { return r.json(); }).then(function(res) { if (res.success) { if (typeof fetchTimeline === 'function') fetchTimeline(); try { window.dispatchEvent(new CustomEvent('n88-board-refresh-status')); } catch (e) {} } else { alert((res.data && res.data.message) || res.message || 'Failed to request revision.'); } });
+                                                                        }, style: { padding: '6px 10px', fontSize: '11px', background: '#3a1f1f', color: '#ffb347', border: '1px solid #ffb347', borderRadius: '4px', cursor: 'pointer' } }, 'Request Revision')
+                                                                    )
+                                                                ) : null,
+                                                                (!isOperatorTimeline && s.step_number === 6) ? React.createElement('div', { style: { marginTop: '12px', padding: '10px', border: '1px solid ' + darkBorder, borderRadius: '4px', background: '#101010' } },
+                                                                    React.createElement('div', { style: { fontSize: '12px', fontWeight: '600', color: greenAccent, marginBottom: '8px' } }, 'Delivery Confirmation'),
+                                                                    React.createElement('div', { style: { fontSize: '11px', color: darkText, marginBottom: '6px' } }, 'Status: ' + String(step6Execution.status || 'not_started').replace(/_/g, ' ')),
+                                                                    step6Execution.tracking_number ? React.createElement('div', { style: { fontSize: '11px', color: darkText, marginBottom: '6px' } }, 'Tracking #: ' + step6Execution.tracking_number) : null,
+                                                                    step6Execution.delivery_notes ? React.createElement('div', { style: { fontSize: '11px', color: darkText, marginBottom: '6px', whiteSpace: 'pre-wrap' } }, 'Delivery notes: ' + step6Execution.delivery_notes) : null,
+                                                                    Array.isArray(step6Execution.shipping_documents) && step6Execution.shipping_documents.length ? React.createElement('ul', { style: { margin: '4px 0 8px 16px', padding: 0, fontSize: '11px' } }, step6Execution.shipping_documents.map(function(f, idx) {
+                                                                        return React.createElement('li', { key: 'ship-doc-' + idx }, React.createElement('a', { href: f.url, target: '_blank', rel: 'noopener noreferrer', style: { color: greenAccent } }, f.title || ('Shipping Doc ' + (idx + 1))));
+                                                                    })) : null,
+                                                                    !step5Approved ? React.createElement('div', { style: { fontSize: '11px', color: '#ffb347' } }, 'Step 6 is blocked until Step 5 is approved.') : React.createElement('button', { type: 'button', onClick: function() {
+                                                                        var fd = new FormData();
+                                                                        fd.append('action', 'n88_buyer_confirm_step6_delivery');
+                                                                        fd.append('item_id', String(itemId));
+                                                                        fd.append('_ajax_nonce', nonceRfq);
+                                                                        fetch(ajaxUrlOp, { method: 'POST', body: fd }).then(function(r) { return r.json(); }).then(function(res) { if (res.success) { if (typeof fetchTimeline === 'function') fetchTimeline(); try { window.dispatchEvent(new CustomEvent('n88-board-refresh-status')); } catch (e) {} } else { alert((res.data && res.data.message) || res.message || 'Failed to confirm delivery.'); } });
+                                                                    }, style: { padding: '6px 10px', fontSize: '11px', background: greenAccent, color: '#000', border: 'none', borderRadius: '4px', cursor: 'pointer', fontFamily: 'monospace' } }, 'Confirm Delivery Complete')
                                                                 ) : null
                                                             );
                                                         })(),
